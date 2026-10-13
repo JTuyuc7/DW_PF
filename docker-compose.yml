@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: transport
+      POSTGRES_PASSWORD: transport
+      POSTGRES_DB: transport
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U transport"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # Almacenamiento compatible con S3 (equivale a S3 / R2 / Cloud Storage en la nube)
+  storage:
+    image: chrislusf/seaweedfs:latest
+    command: server -s3 -dir=/data
+    ports:
+      - "8333:8333"
+    volumes:
+      - storagedata:/data
+
+  api:
+    build: ./apps/api
+    environment:
+      DATABASE_URL: postgres://transport:transport@db:5432/transport
+      JWT_SECRET: dev-secret-cambiar
+      WEB_ORIGIN: http://localhost:3000
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./apps/web
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
+  storagedata:

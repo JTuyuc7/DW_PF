@@ -1,0 +1,10 @@
+node_modules/
+.next/
+dist/
+.env
+.idea/
+*.log
+.DS_Store
+context
+# Información privada del equipo (credenciales, notas internas)
+context/
