@@ -8,7 +8,10 @@ const demoUsers = [
   { email: "cliente@ejemplo.gt", name: "Cliente Demo", role: "cliente" },
 ] as const;
 
-const passwordHash = await Bun.password.hash("demo1234");
+const seedPassword = process.env.SEED_PASSWORD;
+if (!seedPassword) throw new Error("SEED_PASSWORD no está definida");
+
+const passwordHash = await Bun.password.hash(seedPassword);
 
 for (const u of demoUsers) {
   await db
@@ -17,5 +20,5 @@ for (const u of demoUsers) {
     .onConflictDoNothing({ target: schema.users.email });
 }
 
-console.log(`Seed listo: ${demoUsers.length} usuarios demo (contraseña: demo1234)`);
+console.log(`Seed listo: ${demoUsers.length} usuarios demo (contraseña: SEED_PASSWORD)`);
 await client.end();

@@ -1,0 +1,733 @@
+<meta charset="utf-8">
+<title>Wireframes TransPort</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: barra de pantallas arriba; lienzo de wireframe a la izquierda y notas numeradas a la derecha. Baja fidelidad: solo grises y un color de marca para los números de nota. */
+:root {
+  --bg: #eceef0;
+  --paper: #fafbfb;
+  --ink: #23272b;
+  --muted: #6b737a;
+  --line: #b4bbc1;
+  --fill: #dfe3e6;
+  --fill-2: #cdd3d7;
+  --mark: #b5461b;
+  --ok: #3f6b4f;
+  --warn: #8a6a12;
+  --sans: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #17191b; --paper: #202326; --ink: #e4e7e9; --muted: #98a1a8; --line: #4a5157;
+    --fill: #2d3236; --fill-2: #3a4146; --mark: #e8825a; --ok: #7fb893; --warn: #d4b04e; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #17191b; --paper: #202326; --ink: #e4e7e9; --muted: #98a1a8; --line: #4a5157;
+  --fill: #2d3236; --fill-2: #3a4146; --mark: #e8825a; --ok: #7fb893; --warn: #d4b04e; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.5;
+  padding-inline: max(16px, env(safe-area-inset-left, 0px)) max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 40px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 20px; }
+header h1 { font-size: 22px; margin: 0 0 4px; font-weight: 600; text-wrap: balance; }
+header p { margin: 0; color: var(--muted); max-width: 70ch; }
+.meta { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+nav { display: flex; flex-wrap: wrap; gap: 8px; }
+nav button {
+  font: inherit; font-size: 13px; padding: 8px 12px; background: var(--paper); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 4px; cursor: pointer;
+}
+nav button b { font-family: var(--mono); font-weight: 500; color: var(--muted); margin-right: 6px; }
+nav button[aria-selected="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+nav button[aria-selected="true"] b { color: var(--paper); opacity: .7; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--mark); outline-offset: 2px; }
+
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 20px; align-items: start; }
+@media (max-width: 860px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+.screen[hidden] { display: none; }
+
+.frame { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.frame-bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--fill); border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.frame-bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: block; }
+.frame-bar span { margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.canvas { padding: 20px; overflow-x: auto; }
+
+.notes { background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 16px; }
+.notes h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em; margin: 0 0 4px; color: var(--muted); font-weight: 600; }
+.notes h3 { font-size: 16px; margin: 0 0 12px; font-weight: 600; }
+.notes ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.notes li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 8px; font-size: 13px; }
+.notes .api { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); overflow-wrap: anywhere; }
+.n { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: var(--mark); color: #fff; font-family: var(--mono); font-size: 11px; font-weight: 500; flex: none; }
+.pin { position: relative; }
+.pin > .n { position: absolute; top: -10px; left: -10px; z-index: 2; }
+
+/* piezas de wireframe */
+.box { border: 1px dashed var(--line); background: var(--fill); border-radius: 3px; }
+.ph { color: var(--muted); }
+.field { display: grid; gap: 4px; }
+.field label { font-size: 12px; color: var(--muted); }
+.input { border: 1px solid var(--line); background: var(--paper); border-radius: 3px; padding: 8px 10px; color: var(--muted); min-height: 36px; }
+.btn { display: inline-block; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: 3px; font-size: 13px; text-align: center; }
+.btn.sec { background: transparent; color: var(--ink); }
+.btn.danger { background: transparent; color: var(--mark); border-color: var(--mark); }
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.tag { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--fill); white-space: nowrap; }
+.tag.ok { color: var(--ok); border-color: var(--ok); }
+.tag.warn { color: var(--warn); border-color: var(--warn); }
+.tag.crit { color: var(--mark); border-color: var(--mark); }
+
+.app { display: grid; grid-template-columns: 170px minmax(0, 1fr); border: 1px solid var(--line); border-radius: 4px; min-width: 640px; }
+.side { background: var(--fill); border-right: 1px solid var(--line); padding: 12px; display: grid; gap: 4px; align-content: start; }
+.side .logo { font-weight: 600; margin-bottom: 8px; }
+.side div { padding: 6px 8px; border-radius: 3px; color: var(--muted); }
+.side div.on { background: var(--paper); color: var(--ink); border: 1px solid var(--line); }
+.main { padding: 16px; display: grid; gap: 16px; align-content: start; min-width: 0; }
+.top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: center; }
+.top h4 { margin: 0; font-size: 18px; font-weight: 600; }
+.chip { font-family: var(--mono); font-size: 12px; border: 1px solid var(--line); padding: 3px 8px; border-radius: 3px; background: var(--paper); }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { border: 1px solid var(--line); border-radius: 3px; padding: 10px; background: var(--paper); }
+.kpi small { color: var(--muted); display: block; font-size: 12px; }
+.kpi strong { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 600; background: var(--fill); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.two { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 700px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.panel { border: 1px solid var(--line); border-radius: 3px; background: var(--paper); min-width: 0; }
+.panel > h5 { margin: 0; padding: 8px 10px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); border-bottom: 1px solid var(--line); background: var(--fill); font-weight: 600; }
+.panel .body { padding: 10px; display: grid; gap: 8px; }
+.panel .scroll { overflow-x: auto; }
+.alert { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; border-bottom: 1px dashed var(--line); padding-bottom: 8px; font-size: 13px; }
+.alert:last-child { border-bottom: 0; padding-bottom: 0; }
+
+.login { max-width: 360px; margin: 10px auto; display: grid; gap: 14px; }
+.login .brand { text-align: center; }
+.login .brand .box { width: 56px; height: 56px; margin: 0 auto 8px; display: grid; place-items: center; }
+.err { border: 1px solid var(--mark); color: var(--mark); padding: 8px 10px; border-radius: 3px; font-size: 13px; }
+
+.timeline { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-family: var(--mono); font-size: 12px; }
+.timeline span { padding: 3px 8px; border: 1px solid var(--line); border-radius: 10px; color: var(--muted); }
+.timeline span.done { background: var(--fill-2); color: var(--ink); }
+.timeline span.now { border-color: var(--mark); color: var(--mark); font-weight: 500; }
+.timeline em { color: var(--line); font-style: normal; }
+.msg { border-left: 3px solid var(--line); padding-left: 10px; font-size: 13px; }
+.msg small { color: var(--muted); display: block; }
+
+.phone { width: 300px; border: 2px solid var(--line); border-radius: 22px; padding: 14px; margin: 0 auto; background: var(--paper); display: grid; gap: 12px; }
+.legend { font-size: 12px; color: var(--muted); }
+.bars { display: grid; gap: 8px; }
+.bar { display: grid; grid-template-columns: 110px minmax(0, 1fr) 28px; gap: 8px; align-items: center; font-size: 13px; }
+.bar .track { height: 14px; background: var(--fill); border: 1px solid var(--line); border-radius: 2px; }
+.bar .fill { height: 100%; background: var(--fill-2); border-right: 2px solid var(--ink); }
+.bar b { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+.al { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 10px 10px 10px 12px; border-bottom: 1px solid var(--line); border-left: 4px solid var(--line); background: var(--paper); }
+.al:last-child { border-bottom: 0; }
+.al.crit { border-left-color: var(--mark); }
+.al.warn { border-left-color: var(--warn); }
+.al.done { opacity: .6; }
+.al strong { font-weight: 500; }
+.al small { color: var(--muted); display: block; font-family: var(--mono); font-size: 11px; }
+.al.sel { background: var(--fill); }
+.kv { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 4px 10px; font-size: 13px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+.map { position: relative; height: 200px; border: 1px dashed var(--line); border-radius: 3px; background-color: var(--fill); background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 40px 40px; }
+.map .lbl { position: absolute; left: 8px; top: 6px; font-size: 11px; color: var(--muted); font-family: var(--mono); background: var(--fill); padding: 0 4px; }
+.dot { position: absolute; width: 12px; height: 12px; border-radius: 50%; background: var(--ink); border: 2px solid var(--paper); }
+.dot.crit { background: var(--mark); width: 16px; height: 16px; }
+.dot.off { background: var(--paper); border-color: var(--muted); }
+.chart { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--muted); font-family: var(--mono); font-size: 9px; }
+.site { border: 1px solid var(--line); border-radius: 4px; min-width: 0; }
+.site-nav { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--fill); }
+.site-nav .links { display: flex; flex-wrap: wrap; gap: 14px; color: var(--muted); }
+.site-body { padding: 20px 16px; display: grid; gap: 22px; }
+.hero { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; align-items: center; }
+@media (max-width: 700px) { .hero { grid-template-columns: minmax(0, 1fr); } }
+.hero h4 { font-size: 22px; margin: 0 0 6px; font-weight: 600; text-wrap: balance; }
+.hero .img { height: 120px; display: grid; place-items: center; }
+.cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 700px) { .cards { grid-template-columns: minmax(0, 1fr); } }
+.card { border: 1px solid var(--line); border-radius: 3px; padding: 12px; background: var(--paper); display: grid; gap: 4px; }
+.card strong { font-weight: 600; }
+.card span { color: var(--muted); font-size: 13px; }
+.sec-h { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; margin: 0 0 8px; }
+.form2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 700px) { .form2 { grid-template-columns: minmax(0, 1fr); } }
+.form2 .full { grid-column: 1 / -1; }
+.ok-msg { border: 1px solid var(--ok); color: var(--ok); padding: 8px 10px; border-radius: 3px; font-size: 13px; }
+.ghost { border: 1px dashed var(--line); border-radius: 3px; padding: 14px; color: var(--muted); text-align: center; font-size: 13px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="meta">TransPort · docs/07-ui-wireframes.md · versión 0.1 · baja fidelidad</p>
+    <h1>Wireframes del corte vertical</h1>
+    <p>Nueve pantallas: el flujo de pedido interno entre giros, la vista consolidada del dueño, las alertas, la sala de ventas pública y la flota con GPS. Los datos son ejemplos. Los números rojos remiten a las notas de la derecha.</p>
+  </header>
+
+  <nav role="tablist" aria-label="Pantallas">
+    <button role="tab" aria-selected="true" data-s="p01"><b>P01</b>Inicio de sesión</button>
+    <button role="tab" aria-selected="false" data-s="p02"><b>P02</b>Panel del giro</button>
+    <button role="tab" aria-selected="false" data-s="p03"><b>P03</b>Lista de pedidos</button>
+    <button role="tab" aria-selected="false" data-s="p04"><b>P04</b>Nuevo pedido</button>
+    <button role="tab" aria-selected="false" data-s="p05"><b>P05</b>Detalle y aprobación</button>
+    <button role="tab" aria-selected="false" data-s="p06"><b>P06</b>Panel del dueño</button>
+    <button role="tab" aria-selected="false" data-s="p07"><b>P07</b>Alertas</button>
+    <button role="tab" aria-selected="false" data-s="p08"><b>P08</b>Sala de ventas</button>
+    <button role="tab" aria-selected="false" data-s="p09"><b>P09</b>Flota y GPS</button>
+  </nav>
+
+  <!-- P01 -->
+  <section class="screen stage" id="p01">
+    <div class="frame">
+      <div class="frame-bar"><i></i><i></i><i></i><span>transport.example/login</span></div>
+      <div class="canvas">
+        <div class="login">
+          <div class="brand">
+            <div class="box ph">logo</div>
+            <strong>TransPort</strong><br><span class="ph">Acceso para personal y clientes</span>
+          </div>
+          <div class="err pin"><span class="n">3</span>Correo o contraseña incorrectos.</div>
+          <div class="field pin"><span class="n">1</span><label for="w-mail">Correo</label><div class="input" id="w-mail">nombre@empresa.com</div></div>
+          <div class="field"><label for="w-pass">Contraseña</label><div class="input" id="w-pass">••••••••</div></div>
+          <div class="btn pin"><span class="n">2</span>Ingresar</div>
+          <div class="legend">¿Eres cliente y aún no tienes cuenta? Solicita una reunión desde la sala de ventas.</div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h2>P01</h2><h3>Inicio de sesión</h3>
+      <ol>
+        <li><span class="n">1</span><span>Correo y contraseña. Validación en el cliente y en el servidor.</span></li>
+        <li><span class="n">2</span><span>Al ingresar, el sistema lee las membresías del usuario y abre el panel que corresponde al rol.</span></li>
+        <li><span class="n">3</span><span>El error es genérico: no indica si falló el correo o la contraseña (respuesta 401).</span></li>
+      </ol>
+      <div class="api">POST /auth/login<br>GET /auth/me</div>
+    </aside>
+  </section>
+
+  <!-- P02 -->
+  <section class="screen stage" id="p02" hidden>
+    <div class="frame">
+      <div class="frame-bar"><i></i><i></i><i></i><span>transport.example/giro/extraccion</span></div>
+      <div class="canvas">
+        <div class="app">
+          <div class="side">
+            <div class="logo">TransPort</div>
+            <div class="on">Panel</div><div>Pedidos</div><div>Inventario</div><div>Flota y GPS</div><div>Alertas</div>
+          </div>
+          <div class="main">
+            <div class="top">
+              <h4>Panel · Extracción</h4>
+              <div class="row"><span class="chip pin"><span class="n">1</span>Giro: Extracción ▾</span><span class="chip">Gerente · A. Morales</span></div>
+            </div>
+            <div class="kpis pin"><span class="n">2</span>
+              <div class="kpi"><small>Pedidos abiertos</small><strong>7</strong></div>
+              <div class="kpi"><small>Retrasados</small><strong>2</strong></div>
+              <div class="kpi"><small>Alertas abiertas</small><strong>3</strong></div>
+              <div class="kpi"><small>Bajo el mínimo</small><strong>1</strong></div>
+            </div>
+            <div class="two">
+              <div class="panel pin"><span class="n">3</span>
+                <h5>Pedidos por atender</h5>
+                <div class="scroll"><table>
+                  <tr><th>N.º</th><th>Solicita</th><th>Fecha</th><th>Estado</th></tr>
+                  <tr><td>341</td><td>Proceso</td><td>05/11</td><td><span class="tag">solicitado</span></td></tr>
+                  <tr><td>338</td><td>Construcción</td><td>30/10</td><td><span class="tag crit">retrasado</span></td></tr>
+                  <tr><td>335</td><td>Proceso</td><td>28/10</td><td><span class="tag">aprobado</span></td></tr>
+                </table></div>
+              </div>
+              <div class="panel pin"><span class="n">4</span>
+                <h5>Alertas</h5>
+                <div class="body">
+                  <div class="alert"><span>Camión C-12 a 92 km/h</span><span class="tag crit">crítica</span></div>
+                  <div class="alert"><span>Pedido 338 retrasado</span><span class="tag warn">aviso</span></div>
+                  <div class="alert"><span>Stock bajo en sede Norte</span><span class="tag">info</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h2>P02</h2><h3>Panel del giro</h3>
+      <ol>
+        <li><span class="n">1</span><span>El giro activo siempre está visible. El dueño puede cambiarlo; el gerente solo ve el suyo.</span></li>
+        <li><span class="n">2</span><span>Cuatro indicadores del giro. Cada uno lleva a la lista filtrada.</span></li>
+        <li><span class="n">3</span><span>Pedidos que el giro debe atender como proveedor, los retrasados primero.</span></li>
+        <li><span class="n">4</span><span>Alertas dirigidas al rol del usuario, con severidad.</span></li>
+      </ol>
+      <div class="api">GET /reports/business-units/{id}<br>GET /orders?status=solicitado<br>GET /alerts</div>
+    </aside>
+  </section>
+
+  <!-- P03 -->
+  <section class="screen stage" id="p03" hidden>
+    <div class="frame">
+      <div class="frame-bar"><i></i><i></i><i></i><span>transport.example/pedidos</span></div>
+      <div class="canvas">
+        <div class="app">
+          <div class="side">
+            <div class="logo">TransPort</div>
+            <div>Panel</div><div class="on">Pedidos</div><div>Inventario</div><div>Flota y GPS</div><div>Alertas</div>
+          </div>
+          <div class="main">
+            <div class="top">
+              <h4>Pedidos</h4>
+              <span class="btn pin"><span class="n">3</span>+ Nuevo pedido</span>
+            </div>
+            <div class="row pin"><span class="n">1</span>
+              <span class="btn">Que debo atender</span><span class="btn sec">Solicitados por mi giro</span>
+              <span class="chip">Estado: todos ▾</span><span class="chip">Del 01/10 al 31/10 ▾</span>
+            </div>
+            <div class="panel pin"><span class="n">2</span>
+              <div class="scroll"><table>
+                <tr><th class="num">N.º</th><th>Proveedor</th><th>Solicitante</th><th>Producto</th><th class="num">Cantidad</th><th>Fecha requerida</th><th>Estado</th></tr>
+                <tr><td class="num">341</td><td>Extracción</td><td>Proceso</td><td>Piedra caliza en bruto</td><td class="num">120 t</td><td>05/11/2026</td><td><span class="tag">solicitado</span></td></tr>
+                <tr><td class="num">338</td><td>Extracción</td><td>Construcción</td><td>Material de relleno</td><td class="num">80 t</td><td>30/10/2026</td><td><span class="tag crit">retrasado</span></td></tr>
+                <tr><td class="num">335</td><td>Extracción</td><td>Proceso</td><td>Piedra caliza en bruto</td><td class="num">200 t</td><td>28/10/2026</td><td><span class="tag ok">aprobado</span></td></tr>
+                <tr><td class="num">331</td><td>Extracción</td><td>Proceso</td><td>Piedra caliza en bruto</td><td class="num">150 t</td><td>20/10/2026</td><td><span class="tag">en_proceso</span></td></tr>
+              </table></div>
+            </div>
+            <div class="legend">Página 1 de 3 · 20 por página</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h2>P03</h2><h3>Lista de pedidos</h3>
+      <ol>
+        <li><span class="n">1</span><span>Dos vistas: lo que el giro debe atender como proveedor y lo que pidió como solicitante. Filtros por estado y fecha.</span></li>
+        <li><span class="n">2</span><span>Cada fila abre el detalle. El estado se escribe igual que en la API. El cliente solo ve sus pedidos.</span></li>
+        <li><span class="n">3</span><span>El botón aparece solo para roles que pueden crear pedidos.</span></li>
+      </ol>
+      <div class="api">GET /orders?status=&amp;from=&amp;to=&amp;page=1&amp;pageSize=20</div>
+    </aside>
+  </section>
+
+  <!-- P04 -->
+  <section class="screen stage" id="p04" hidden>
+    <div class="frame">
+      <div class="frame-bar"><i></i><i></i><i></i><span>transport.example/pedidos/nuevo · vista móvil</span></div>
+      <div class="canvas">
+        <div class="phone">
+          <div class="top"><strong>Nuevo pedido interno</strong><span class="chip">Proceso</span></div>
+          <div class="field pin"><span class="n">1</span><label for="w-sup">Giro proveedor</label><div class="input" id="w-sup">Extracción ▾</div></div>
+          <div class="field pin"><span class="n">2</span><label for="w-prod">Producto</label><div class="input" id="w-prod">Piedra caliza en bruto ▾</div>
+            <span class="legend">Disponible en Extracción: 1,450 t</span></div>
+          <div class="row">
+            <div class="field" style="flex:1"><label for="w-qty">Cantidad</label><div class="input" id="w-qty">120</div></div>
+            <div class="field" style="width:70px"><label>Unidad</label><div class="input">t</div></div>
+          </div>
+          <div class="field pin"><span class="n">3</span><label for="w-date">Fecha requerida</label><div class="input" id="w-date">05/11/2026</div></div>
+          <div class="err pin"><span class="n">4</span>La cantidad debe ser mayor que cero.</div>
+          <div class="row pin"><span class="n">5</span>
+            <span class="btn sec" style="flex:1">Guardar borrador</span><span class="btn" style="flex:1">Solicitar</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h2>P04</h2><h3>Nuevo pedido interno</h3>
+      <ol>
+        <li><span class="n">1</span><span>El giro solicitante es el del usuario y no se edita. El proveedor debe ser otro giro.</span></li>
+        <li><span class="n">2</span><span>Se muestra la existencia del proveedor para pedir una cantidad realista.</span></li>
+        <li><span class="n">3</span><span>Fecha requerida: base para la alerta de pedido retrasado.</span></li>
+        <li><span class="n">4</span><span>Errores de regla de negocio (422) aparecen junto al campo.</span></li>
+        <li><span class="n">5</span><span>"Guardar borrador" deja el pedido en <code>borrador</code>; "Solicitar" lo pasa a <code>solicitado</code>.</span></li>
+      </ol>
+      <div class="api">GET /inventory<br>POST /orders (kind=interno)</div>
+    </aside>
+  </section>
+
+  <!-- P05 -->
+  <section class="screen stage" id="p05" hidden>
+    <div class="frame">
+      <div class="frame-bar"><i></i><i></i><i></i><span>transport.example/pedidos/341</span></div>
+      <div class="canvas">
+        <div class="app">
+          <div class="side">
+            <div class="logo">TransPort</div>
+            <div>Panel</div><div class="on">Pedidos</div><div>Inventario</div><div>Flota y GPS</div><div>Alertas</div>
+          </div>
+          <div class="main">
+            <div class="top">
+              <h4>Pedido 341</h4>
+              <span class="chip">Gerente · Extracción</span>
+            </div>
+            <div class="timeline pin"><span class="n">1</span>
+              <span class="done">borrador</span><em>→</em><span class="now">solicitado</span><em>→</em><span>aprobado</span><em>→</em><span>en_proceso</span><em>→</em><span>despachado</span><em>→</em><span>entregado</span>
+            </div>
+            <div class="two">
+              <div class="panel">
+                <h5>Datos</h5>
+                <div class="body">
+                  <div>Proveedor: <strong>Extracción</strong> · Solicitante: <strong>Proceso</strong></div>
+                  <div>Fecha requerida: <strong>05/11/2026</strong></div>
+                  <div class="scroll"><table>
+                    <tr><th>Producto</th><th class="num">Cantidad</th></tr>
+                    <tr><td>Piedra caliza en bruto</td><td class="num">120 t</td></tr>
+                  </table></div>
+                  <div class="row pin"><span class="n">2</span><span class="btn">Aprobar</span><span class="btn danger">Cancelar pedido</span></div>
+                </div>
+              </div>
+              <div class="panel pin"><span class="n">3</span>
+                <h5>Mensajes</h5>
+                <div class="body">
+                  <div class="msg"><small>L. Pérez · Proceso · 20/10 15:04</small>¿Pueden entregar en la sede Norte?</div>
+                  <div class="msg"><small>A. Morales · Extracción · 20/10 15:20</small>Sí, confirmamos camión para el 04/11.</div>
+                  <div class="input">Escribir mensaje…</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h2>P05</h2><h3>Detalle y aprobación</h3>
+      <ol>
+        <li><span class="n">1</span><span>Línea de estados. Marca el estado actual y los pasos cumplidos.</span></li>
+        <li><span class="n">2</span><span>Solo se muestran las transiciones permitidas para el rol y el estado. Aquí, el gerente del proveedor ve "Aprobar" y "Cancelar". Una transición inválida devuelve 409.</span></li>
+        <li><span class="n">3</span><span>Hilo de mensajes del pedido, visible para los dos giros.</span></li>
+      </ol>
+      <div class="api">GET /orders/{id}<br>PATCH /orders/{id}/status<br>GET · POST /orders/{id}/messages</div>
+    </aside>
+  </section>
+
+  <!-- P06 -->
+  <section class="screen stage" id="p06" hidden>
+    <div class="frame">
+      <div class="frame-bar"><i></i><i></i><i></i><span>transport.example/consolidado</span></div>
+      <div class="canvas">
+        <div class="app">
+          <div class="side">
+            <div class="logo">TransPort</div>
+            <div class="on">Consolidado</div><div>Giros</div><div>Pedidos</div><div>Alertas</div><div>Flota y GPS</div><div>Presupuesto</div>
+          </div>
+          <div class="main">
+            <div class="top">
+              <h4>Panel consolidado</h4>
+              <div class="row"><span class="chip pin"><span class="n">1</span>Octubre 2026 ▾</span><span class="chip">Dueño · todos los giros</span></div>
+            </div>
+            <div class="kpis pin"><span class="n">2</span>
+              <div class="kpi"><small>Pedidos abiertos</small><strong>23</strong></div>
+              <div class="kpi"><small>Retrasados</small><strong>5</strong></div>
+              <div class="kpi"><small>Alertas abiertas</small><strong>8</strong></div>
+              <div class="kpi"><small>Entregados en el mes</small><strong>41</strong></div>
+            </div>
+            <div class="panel pin"><span class="n">3</span>
+              <h5>Estado por giro</h5>
+              <div class="scroll"><table>
+                <tr><th>Giro</th><th class="num">Abiertos</th><th class="num">Retrasados</th><th class="num">Alertas</th><th class="num">Activos en ruta</th><th>Situación</th></tr>
+                <tr><td>Extracción</td><td class="num">7</td><td class="num">2</td><td class="num">3</td><td class="num">4</td><td><span class="tag crit">atención</span></td></tr>
+                <tr><td>Proceso</td><td class="num">5</td><td class="num">1</td><td class="num">1</td><td class="num">0</td><td><span class="tag warn">vigilar</span></td></tr>
+                <tr><td>Maquinaria</td><td class="num">3</td><td class="num">0</td><td class="num">1</td><td class="num">3</td><td><span class="tag ok">normal</span></td></tr>
+                <tr><td>Transporte de materia prima</td><td class="num">2</td><td class="num">1</td><td class="num">2</td><td class="num">6</td><td><span class="tag crit">atención</span></td></tr>
+                <tr><td>Transporte de producto</td><td class="num">4</td><td class="num">1</td><td class="num">1</td><td class="num">5</td><td><span class="tag warn">vigilar</span></td></tr>
+                <tr><td>Construcción</td><td class="num">2</td><td class="num">0</td><td class="num">0</td><td class="num">2</td><td><span class="tag ok">normal</span></td></tr>
+              </table></div>
+            </div>
+            <div class="two">
+              <div class="panel pin"><span class="n">4</span>
+                <h5>Pedidos abiertos por giro</h5>
+                <div class="body bars">
+                  <div class="bar"><span>Extracción</span><div class="track"><div class="fill" style="width:100%"></div></div><b>7</b></div>
+                  <div class="bar"><span>Proceso</span><div class="track"><div class="fill" style="width:71%"></div></div><b>5</b></div>
+                  <div class="bar"><span>Maquinaria</span><div class="track"><div class="fill" style="width:43%"></div></div><b>3</b></div>
+                  <div class="bar"><span>Transp. materia</span><div class="track"><div class="fill" style="width:29%"></div></div><b>2</b></div>
+                  <div class="bar"><span>Transp. producto</span><div class="track"><div class="fill" style="width:57%"></div></div><b>4</b></div>
+                  <div class="bar"><span>Construcción</span><div class="track"><div class="fill" style="width:29%"></div></div><b>2</b></div>
+                </div>
+              </div>
+              <div class="panel pin"><span class="n">5</span>
+                <h5>Alertas críticas</h5>
+                <div class="body">
+                  <div class="alert"><span>Camión C-12 a 92 km/h</span><span class="tag crit">Extracción</span></div>
+                  <div class="alert"><span>Camión T-07 a 88 km/h</span><span class="tag crit">Transp. materia</span></div>
+                  <div class="legend">Ver las 8 alertas →</div>
+                </div>
+              </div>
+            </div>
+            <div class="ghost pin"><span class="n">6</span>Presupuesto y gastos por giro · solo diseño, fuera del MVP</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h2>P06</h2><h3>Panel del dueño</h3>
+      <ol>
+        <li><span class="n">1</span><span>Período del resumen. Por defecto, el mes en curso.</span></li>
+        <li><span class="n">2</span><span>Totales de los seis giros sumados. Cada cifra lleva a la lista filtrada.</span></li>
+        <li><span class="n">3</span><span>Una fila por giro. "Situación" resume retrasos y alertas para ver de un vistazo dónde intervenir. Cada fila abre el panel del giro (P02).</span></li>
+        <li><span class="n">4</span><span>Comparación de carga entre giros, útil para ver cuellos de botella en la cadena extracción → proceso.</span></li>
+        <li><span class="n">5</span><span>Solo alertas críticas; el resto está en la pantalla de alertas.</span></li>
+        <li><span class="n">6</span><span>Espacio reservado para presupuesto vs. gasto. Está diseñado en el modelo de datos pero no se implementa.</span></li>
+      </ol>
+      <div class="api">GET /reports/overview<br>GET /reports/business-units/{id}<br>GET /alerts</div>
+    </aside>
+  </section>
+
+  <!-- P07 -->
+  <section class="screen stage" id="p07" hidden>
+    <div class="frame">
+      <div class="frame-bar"><i></i><i></i><i></i><span>transport.example/alertas</span></div>
+      <div class="canvas">
+        <div class="app">
+          <div class="side">
+            <div class="logo">TransPort</div>
+            <div>Panel</div><div>Pedidos</div><div>Inventario</div><div>Flota y GPS</div><div class="on">Alertas</div>
+          </div>
+          <div class="main">
+            <div class="top">
+              <h4>Alertas</h4>
+              <span class="chip">Gerente · Extracción</span>
+            </div>
+            <div class="row pin"><span class="n">1</span>
+              <span class="btn">Abiertas (3)</span><span class="btn sec">Atendidas</span>
+              <span class="chip">Severidad: todas ▾</span><span class="chip">Tipo: todos ▾</span>
+            </div>
+            <div class="two">
+              <div class="panel pin"><span class="n">2</span>
+                <h5>Dirigidas a mi rol</h5>
+                <div>
+                  <div class="al crit sel"><div><strong>Camión C-12 a 92 km/h</strong><small>exceso_velocidad · hace 4 min</small></div><span class="tag crit">crítica</span></div>
+                  <div class="al warn"><div><strong>Pedido 338 retrasado 3 días</strong><small>pedido_retrasado · hace 2 h</small></div><span class="tag warn">aviso</span></div>
+                  <div class="al"><div><strong>Stock bajo en sede Norte</strong><small>stock_bajo · hoy 08:10</small></div><span class="tag">info</span></div>
+                  <div class="al crit done"><div><strong>Camión C-03 a 85 km/h</strong><small>exceso_velocidad · ayer 16:42</small></div><span class="tag ok">atendida</span></div>
+                </div>
+              </div>
+              <div class="panel pin"><span class="n">3</span>
+                <h5>Detalle</h5>
+                <div class="body">
+                  <dl class="kv" style="margin:0">
+                    <dt>Activo</dt><dd>Camión C-12</dd>
+                    <dt>Velocidad</dt><dd>92 km/h (límite 80)</dd>
+                    <dt>Regla</dt><dd>exceso_velocidad</dd>
+                    <dt>Ubicación</dt><dd>14.63, -90.51</dd>
+                    <dt>Registrada</dt><dd>20/10/2026 15:31</dd>
+                  </dl>
+                  <span class="btn pin"><span class="n">4</span>Marcar como atendida</span>
+                  <div class="legend">Ver historial del camión →</div>
+                </div>
+              </div>
+            </div>
+            <div class="ghost pin"><span class="n">5</span>Configurar reglas de alerta · solo diseño, fuera del MVP</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h2>P07</h2><h3>Alertas</h3>
+      <ol>
+        <li><span class="n">1</span><span>Se abre en "Abiertas". Filtros por severidad y tipo de regla.</span></li>
+        <li><span class="n">2</span><span>Solo aparecen las alertas dirigidas al rol y al giro del usuario. La franja de color marca la severidad y la etiqueta repite el texto para no depender del color.</span></li>
+        <li><span class="n">3</span><span>Al elegir una alerta se ve el dato que la originó (<code>payload</code>) y enlaces al activo o al pedido relacionado.</span></li>
+        <li><span class="n">4</span><span>Solo el destinatario puede marcarla como atendida. Pasa a la pestaña "Atendidas".</span></li>
+        <li><span class="n">5</span><span>La edición de reglas queda diseñada para gerente y dueño; el MVP usa reglas semilla.</span></li>
+      </ol>
+      <div class="api">GET /alerts<br>PATCH /alerts/{id}<br>GET /assets/{id}/events<br>GET · PUT /alert-rules (diseño)</div>
+    </aside>
+  </section>
+
+  <!-- P08 -->
+  <section class="screen stage" id="p08" hidden>
+    <div class="frame">
+      <div class="frame-bar"><i></i><i></i><i></i><span>transport.example/</span></div>
+      <div class="canvas">
+        <div class="site">
+          <div class="site-nav">
+            <strong>TransPort</strong>
+            <div class="links"><span>Giros</span><span>Catálogo</span><span>Reunión</span></div>
+            <span class="btn sec pin"><span class="n">1</span>Ingresar</span>
+          </div>
+          <div class="site-body">
+            <div class="hero">
+              <div>
+                <h4>Seis giros, un solo proveedor</h4>
+                <p class="ph" style="margin:0 0 12px">Materia prima, procesamiento, maquinaria, transporte y construcción desde la Zona 10, Guatemala.</p>
+                <span class="btn pin"><span class="n">2</span>Solicitar una reunión</span>
+              </div>
+              <div class="box img ph">imagen</div>
+            </div>
+
+            <div class="pin"><span class="n">3</span>
+              <h5 class="sec-h">Nuestros giros</h5>
+              <div class="cards">
+                <div class="card"><strong>Extracción</strong><span>Materia prima en bruto.</span></div>
+                <div class="card"><strong>Proceso</strong><span>Transformación en producto terminado.</span></div>
+                <div class="card"><strong>Maquinaria</strong><span>Alquiler de equipo pesado.</span></div>
+                <div class="card"><strong>Transporte de materia prima</strong><span>Traslado hacia planta.</span></div>
+                <div class="card"><strong>Transporte de producto</strong><span>Entrega al cliente final.</span></div>
+                <div class="card"><strong>Construcción</strong><span>Obra civil y proyectos.</span></div>
+              </div>
+            </div>
+
+            <div class="pin"><span class="n">4</span>
+              <h5 class="sec-h">Catálogo</h5>
+              <div class="row" style="margin-bottom:8px"><span class="btn">Todos</span><span class="chip">Giro: todos ▾</span></div>
+              <div class="panel"><div class="scroll"><table>
+                <tr><th>Producto o servicio</th><th>Giro</th><th>Unidad</th></tr>
+                <tr><td>Piedra caliza en bruto</td><td>Extracción</td><td>tonelada</td></tr>
+                <tr><td>Agregado triturado</td><td>Proceso</td><td>tonelada</td></tr>
+                <tr><td>Alquiler de excavadora</td><td>Maquinaria</td><td>hora</td></tr>
+                <tr><td>Flete de materia prima</td><td>Transporte de materia prima</td><td>viaje</td></tr>
+                <tr><td>Flete de producto</td><td>Transporte de producto</td><td>viaje</td></tr>
+                <tr><td>Obra civil</td><td>Construcción</td><td>m²</td></tr>
+              </table></div></div>
+            </div>
+
+            <div id="w-reunion">
+              <h5 class="sec-h">Solicitar una reunión</h5>
+              <div class="form2 pin"><span class="n">5</span>
+                <div class="field"><label for="w-nom">Nombre</label><div class="input" id="w-nom">Nombre y apellido</div></div>
+                <div class="field"><label for="w-emp">Empresa y NIT</label><div class="input" id="w-emp">Razón social · NIT</div></div>
+                <div class="field"><label for="w-cor">Correo</label><div class="input" id="w-cor">nombre@empresa.com</div></div>
+                <div class="field"><label for="w-tel">Teléfono</label><div class="input" id="w-tel">0000 0000</div></div>
+                <div class="field"><label for="w-gir">Giro de interés</label><div class="input" id="w-gir">Seleccionar ▾</div></div>
+                <div class="field"><label for="w-fec">Fecha preferida</label><div class="input" id="w-fec">dd/mm/aaaa</div></div>
+                <div class="field full"><label for="w-nec">¿Qué necesita?</label><div class="input" id="w-nec" style="min-height:64px">Describa brevemente su necesidad</div></div>
+                <div class="full row"><span class="btn pin"><span class="n">6</span>Solicitar reunión</span></div>
+                <div class="full ok-msg pin"><span class="n">7</span>Recibimos su solicitud. Un vendedor lo contactará para confirmar la fecha.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h2>P08</h2><h3>Sala de ventas</h3>
+      <ol>
+        <li><span class="n">1</span><span>Único acceso al área privada. Lleva a P01.</span></li>
+        <li><span class="n">2</span><span>Llamada principal: baja al formulario de reunión.</span></li>
+        <li><span class="n">3</span><span>Los seis giros se leen de la API, así el contenido no queda fijo en la interfaz.</span></li>
+        <li><span class="n">4</span><span>Solo productos y servicios marcados como públicos. Filtro por giro.</span></li>
+        <li><span class="n">5</span><span>Todos los campos se validan en el cliente y en el servidor. Correo y teléfono son obligatorios para poder contactar.</span></li>
+        <li><span class="n">6</span><span>Crea una reunión en estado <code>solicitada</code> y le asigna un vendedor.</span></li>
+        <li><span class="n">7</span><span>Mensaje de confirmación. No promete fecha: la confirma el vendedor.</span></li>
+      </ol>
+      <div class="api">GET /public/business-units<br>GET /public/products<br>POST /public/meeting-requests</div>
+    </aside>
+  </section>
+
+  <!-- P09 -->
+  <section class="screen stage" id="p09" hidden>
+    <div class="frame">
+      <div class="frame-bar"><i></i><i></i><i></i><span>transport.example/flota</span></div>
+      <div class="canvas">
+        <div class="app">
+          <div class="side">
+            <div class="logo">TransPort</div>
+            <div>Panel</div><div>Pedidos</div><div>Inventario</div><div class="on">Flota y GPS</div><div>Alertas</div>
+          </div>
+          <div class="main">
+            <div class="top">
+              <h4>Flota y GPS</h4>
+              <span class="chip">Gerente · Extracción</span>
+            </div>
+            <div class="row pin"><span class="n">1</span>
+              <span class="btn">Todos (6)</span><span class="btn sec">Camiones</span><span class="btn sec">Maquinaria</span>
+              <span class="chip">Estado: todos ▾</span>
+            </div>
+            <div class="two">
+              <div class="panel pin"><span class="n">2</span>
+                <h5>Ubicación actual</h5>
+                <div class="body">
+                  <div class="map">
+                    <span class="lbl">mapa</span>
+                    <span class="dot crit" style="left:46%;top:38%" title="C-12"></span>
+                    <span class="dot" style="left:22%;top:62%" title="C-05"></span>
+                    <span class="dot" style="left:70%;top:24%" title="M-02"></span>
+                    <span class="dot" style="left:80%;top:70%" title="M-04"></span>
+                    <span class="dot" style="left:34%;top:20%" title="C-09"></span>
+                    <span class="dot off" style="left:58%;top:78%" title="C-03"></span>
+                  </div>
+                  <div class="legend">Punto rojo: alerta abierta. Punto vacío: sin señal.</div>
+                </div>
+              </div>
+              <div class="panel">
+                <h5>Activos</h5>
+                <div>
+                  <div class="al crit sel"><div><strong>Camión C-12</strong><small>92 km/h · hace 1 min</small></div><span class="tag crit">exceso</span></div>
+                  <div class="al"><div><strong>Camión C-05</strong><small>64 km/h · hace 1 min</small></div><span class="tag ok">en ruta</span></div>
+                  <div class="al"><div><strong>Camión C-09</strong><small>0 km/h · hace 2 min</small></div><span class="tag">detenido</span></div>
+                  <div class="al"><div><strong>Excavadora M-02</strong><small>en sitio · hace 3 min</small></div><span class="tag ok">activa</span></div>
+                  <div class="al"><div><strong>Cargador M-04</strong><small>en sitio · hace 3 min</small></div><span class="tag ok">activa</span></div>
+                  <div class="al warn"><div><strong>Camión C-03</strong><small>última lectura hace 25 min</small></div><span class="tag warn">sin señal</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="two">
+              <div class="panel pin"><span class="n">3</span>
+                <h5>Velocidad · Camión C-12</h5>
+                <div class="body">
+                  <svg class="chart" viewBox="0 0 300 112" role="img" aria-label="Velocidad del camión C-12 entre las 15:10 y las 15:35, con límite de 80 km/h">
+                    <line x1="20" y1="95" x2="290" y2="95" style="stroke:var(--line)" stroke-width="1"/>
+                    <line x1="20" y1="5" x2="20" y2="95" style="stroke:var(--line)" stroke-width="1"/>
+                    <line x1="20" y1="23" x2="290" y2="23" style="stroke:var(--mark)" stroke-width="1" stroke-dasharray="4 3"/>
+                    <text x="2" y="98">0</text>
+                    <text x="2" y="9">100</text>
+                    <text x="24" y="19">límite 80</text>
+                    <polyline points="20,39.2 72,32 124,24.8 176,18.5 228,12.2 280,15.8" style="stroke:var(--ink);fill:none" stroke-width="2"/>
+                    <circle cx="228" cy="12.2" r="4" style="fill:var(--mark)"/>
+                    <text x="14" y="108">15:10</text><text x="66" y="108">15:15</text><text x="118" y="108">15:20</text><text x="170" y="108">15:25</text><text x="222" y="108">15:30</text><text x="266" y="108">15:35</text>
+                  </svg>
+                  <div class="legend">Pico de 92 km/h a las 15:30. Unidad: km/h.</div>
+                </div>
+              </div>
+              <div class="panel pin"><span class="n">4</span>
+                <h5>Últimas lecturas</h5>
+                <div class="scroll"><table>
+                  <tr><th>Hora</th><th class="num">Lat</th><th class="num">Lng</th><th class="num">km/h</th></tr>
+                  <tr><td>15:35</td><td class="num">14.631</td><td class="num">-90.512</td><td class="num">88</td></tr>
+                  <tr><td>15:30</td><td class="num">14.630</td><td class="num">-90.514</td><td class="num">92</td></tr>
+                  <tr><td>15:25</td><td class="num">14.628</td><td class="num">-90.517</td><td class="num">85</td></tr>
+                  <tr><td>15:20</td><td class="num">14.626</td><td class="num">-90.520</td><td class="num">78</td></tr>
+                </table></div>
+              </div>
+            </div>
+            <div class="ghost pin"><span class="n">5</span>Datos del servicio GPS simulado · en producción provienen del proveedor</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <aside class="notes">
+      <h2>P09</h2><h3>Flota y GPS</h3>
+      <ol>
+        <li><span class="n">1</span><span>Filtros por tipo de activo (camión o maquinaria) y por estado. Solo se ven los activos del giro del usuario; el dueño ve todos.</span></li>
+        <li><span class="n">2</span><span>Posición más reciente de cada activo. El mapa es un marcador de posición; la implementación real requiere una librería de mapas.</span></li>
+        <li><span class="n">3</span><span>Velocidad del activo elegido frente al límite de la regla <code>exceso_velocidad</code>. Es la misma lectura que dispara la alerta de P07.</span></li>
+        <li><span class="n">4</span><span>Historial de lecturas (<code>GPS_EVENT</code>) con hora, coordenadas y velocidad.</span></li>
+        <li><span class="n">5</span><span>El contrato del servicio GPS es una suposición (ver sección 6 de 05-datos-y-apis). Un activo sin lecturas recientes se marca "sin señal".</span></li>
+      </ol>
+      <div class="api">GET /assets<br>GET /assets/{id}/events<br>POST /gps/ingest (servicio interno)
+    </aside>
+  </section>
+</div>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('nav button');
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(function (s) { s.hidden = s.id !== id; });
+    tabs.forEach(function (t) { t.setAttribute('aria-selected', String(t.dataset.s === id)); });
+    try { history.replaceState(null, '', '#' + id); } catch (e) {}
+  }
+  tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.s); }); });
+  var h = (location.hash || '').slice(1);
+  if (/^p0[1-9]$/.test(h)) show(h);
+})();
+</script>

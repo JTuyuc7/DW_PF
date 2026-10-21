@@ -1,7 +1,8 @@
 import type { MiddlewareHandler } from "hono";
 import { jwt, sign } from "hono/jwt";
 
-const secret = process.env.JWT_SECRET ?? "dev-secret-cambiar";
+const secret = process.env.JWT_SECRET;
+if (!secret) throw new Error("JWT_SECRET no está definida");
 const TTL_SECONDS = 60 * 60 * 8;
 
 export type Role = "dueno" | "gerente" | "vendedor" | "operativo" | "cliente";

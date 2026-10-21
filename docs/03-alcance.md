@@ -1,45 +1,61 @@
-# 03 - Alcance (borrador)
+# 03 - Alcance
 
-Proyecto individual, menos de un mes. Se evalúa propuesta, diseño, avance funcional (login + visual) y justificación. Por eso el alcance se divide en **diseñado** (documentado) e **implementado** (código que corre).
+| | |
+|---|---|
+| **Proyecto** | TransPort |
+| **Documento** | Alcance diseñado e implementado, exclusiones y riesgos |
+| **Estado** | Versión 0.2 |
+| **Documentos relacionados** | [01-requisitos](01-requisitos.md), [04-arquitectura](04-arquitectura.md), [05-datos-y-apis](05-datos-y-apis.md), [07-ui-wireframes](07-ui-wireframes.md) |
 
-## Principio
+## 1. Principio rector
 
-Diseñar toda la solución a nivel conceptual (arquitectura, datos, APIs, infraestructura). Implementar un **corte vertical mínimo** que demuestre que la arquitectura funciona.
+El proyecto es individual y dispone de menos de un mes. Se evalúan la propuesta, el diseño, el avance funcional (inicio de sesión y parte visual) y la justificación técnica. Por ello el alcance se divide en dos niveles:
 
-## Propuesta de MVP implementado (a validar)
+- **Diseñado:** toda la solución se documenta a nivel conceptual (arquitectura, datos, APIs, interfaz e infraestructura).
+- **Implementado:** un **corte vertical mínimo** (MVP) que demuestra que la arquitectura funciona de extremo a extremo.
 
-1. **Autenticación y roles** (login, roles: dueño, gerente, vendedor, operativo, cliente).
-2. **Sitio público "sala de ventas"** con los 6 giros, catálogo y formulario de pedido/agenda de reunión.
-3. **Pedidos**: un flujo completo de punta a punta, de preferencia el **pedido interno entre giros** (proceso <- extracción), porque es el más representativo del problema.
-4. **Dashboard consolidado** simple (datos semilla) con vista por giro y vista general.
-5. **Alertas**: al menos una regla real (ej. pedido retrasado o exceso de velocidad de un camión usando datos GPS simulados).
-6. **API B2B versionada** (`/api/v1`) con token y un endpoint para que un tercero cree pedidos.
-7. **PWA** instalable (manifest + service worker).
-8. **Docker Compose** que levanta todo (front, API, Postgres).
+## 2. Alcance implementado (MVP)
 
-## Solo diseñado (no se construye)
+| N.º | Capacidad | Requisitos | Detalle |
+|---|---|---|---|
+| 1 | Autenticación y roles | RNF-04 | Inicio de sesión con JWT y roles: dueño, gerente, vendedor, operativo, administrativo y cliente. |
+| 2 | Sala de ventas pública | RF-07, RF-08 | Presentación de los seis giros, catálogo y solicitud de reunión con asignación de vendedor. |
+| 3 | Pedido interno entre giros | RF-04 | Flujo completo de punta a punta entre la planta de proceso (solicitante) y la extracción (proveedor), con estados e hilo de mensajes. |
+| 4 | Panel por giro y consolidado | RF-02, RF-06 | Indicadores con datos semilla, con vista por giro y vista general del dueño. |
+| 5 | Alertas | RF-05, RF-10 | Al menos una regla real, por ejemplo exceso de velocidad de un camión con datos del servicio GPS simulado, y pedido retrasado. |
+| 6 | API para terceros | RF-09 | API versionada (`/api/v1/b2b`) con clave y un endpoint para que un tercero cree pedidos de forma idempotente. |
+| 7 | PWA | RNF-01 | Aplicación instalable (manifiesto y service worker). |
+| 8 | Despliegue con contenedores | RNF-02 | `docker-compose.yml` que levanta frontend, API y base de datos. |
 
-- Módulos completos de cada giro (inventario de planta, contratos de alquiler, presupuestos de obra, contabilidad).
-- Integración real con GPS-Inversiones (se simula con un servicio mock que imita su API).
-- EDI/CSV con terceros y webhooks salientes (se documentan; webhooks como extra si sobra tiempo).
-- BI (Power BI/Tableau) y notificaciones push/email/SMS reales.
-- Despliegue real en nube (se documenta propuesta y costos hipotéticos).
-- Chat/comunicación cliente-empresa (se diseña; en MVP puede ser un hilo de mensajes por pedido).
+El detalle de las entidades que se implementan está en la sección 4 de [05-datos-y-apis](05-datos-y-apis.md), y las pantallas en [07-ui-wireframes](07-ui-wireframes.md).
 
-## Fuera de alcance
+## 3. Alcance solo diseñado
 
-- Desarrollar la app de GPS-Inversiones.
-- Contabilidad formal / facturación electrónica (SAT).
+- Módulos completos de cada giro: inventario de planta, contratos de alquiler, presupuestos de obra y contabilidad.
+- Presupuesto y gastos por giro (RF-01): modelados en `BUDGET` y `EXPENSE`, sin implementación.
+- Integración real con GPS-Inversiones: se simula con un servicio que imita su contrato (ver sección 6 de [05-datos-y-apis](05-datos-y-apis.md)).
+- Importación EDI/CSV con terceros y webhooks salientes. Los webhooks se implementan solo si el tiempo lo permite.
+- Inteligencia de negocio (Power BI o Tableau) y notificaciones push, correo o SMS reales.
+- Despliegue real en la nube: se documenta una propuesta, descrita en [06-infraestructura](06-infraestructura.md).
+- Comunicación entre cliente y empresa: se diseña como canal completo; en el MVP se reduce a un hilo de mensajes por pedido.
 
-## Riesgos
+## 4. Fuera de alcance
+
+- Desarrollo de la aplicación de GPS-Inversiones.
+- Contabilidad formal y facturación electrónica (SAT).
+
+## 5. Decisiones de alcance adoptadas
+
+| Pregunta | Decisión |
+|---|---|
+| ¿Una aplicación o dos (intranet y extranet)? | Una sola base de código con zonas por rol: sitio público, portal de cliente e intranet. La API para terceros es una superficie aparte. |
+| ¿Qué flujo es el MVP? | El pedido interno entre giros (proceso solicita a extracción), por ser el más representativo del problema. |
+
+## 6. Riesgos
 
 | Riesgo | Mitigación |
-|--------|------------|
-| Alcance demasiado grande para un solo desarrollador | Corte vertical único, resto documentado. |
-| Muchas tecnologías candidatas | Elegir un stack y justificarlo (ver `06-infraestructura.md`); no mezclar runtimes sin razón. |
-| Demo depende de la nube | Todo debe correr localmente con Docker Compose. |
-
-## Preguntas abiertas
-
-- ¿Una app con rutas por rol, o dos (intranet y extranet)? Recomendación inicial: **una sola base de código con zonas por rol** (sitio público + portal cliente + intranet), y la API B2B como superficie aparte.
-- ¿Qué flujo exacto es el MVP? Propongo el pedido interno entre giros; falta confirmar.
+|---|---|
+| Alcance excesivo para un solo desarrollador. | Un único corte vertical; el resto se documenta. |
+| Gran cantidad de tecnologías candidatas. | Un stack elegido y justificado (ver [04-arquitectura](04-arquitectura.md)); no se mezclan entornos de ejecución sin razón. |
+| La demostración depende de la nube. | Todo el sistema se ejecuta localmente con Docker Compose. |
+| El contrato del servicio GPS es una suposición. | Se documenta como tal y debe validarse con el proveedor antes de una integración real. |
