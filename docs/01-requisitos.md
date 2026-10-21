@@ -1,44 +1,56 @@
 # 01 - Requisitos
 
-Fuente: `documento.md` (enunciado) y clases de Desarrollo Web del 29/09 y 01/10/2026.
-Modalidad: **proyecto individual**.
+| | |
+|---|---|
+| **Proyecto** | TransPort |
+| **Documento** | Requisitos funcionales y no funcionales, y criterios de entrega |
+| **Estado** | Versión 0.2 |
+| **Documentos relacionados** | [02-dominio](02-dominio.md), [03-alcance](03-alcance.md) |
 
-## Requisitos funcionales (del enunciado)
+## 1. Alcance de este documento
 
-| ID | Requisito |
-|----|-----------|
-| RF-01 | Solución a medida para que los empleados de cada giro lleven control operativo (presupuesto y gastos propios por giro). |
-| RF-02 | Desde la sede central, dueños y administradores generales controlan y generan reportes para toma de decisiones. |
-| RF-03 | Los clientes dan seguimiento a sus operaciones/transacciones, ven reportes del estado de su negocio con cada sub-empresa y pueden comunicarse. |
-| RF-04 | Pedidos directos entre giros de negocio para abastecimiento oportuno (ej. planta de proceso <- planta de extracción). |
-| RF-05 | Alertas y recordatorios según rol e interés: operativos, vendedores, administrativos, gerentes y dueños. |
-| RF-06 | Reportes consolidados por giro y generales. |
-| RF-07 | Pedidos en línea según producto, o agendar reuniones y asignar vendedor específico para cerrar tratos. |
-| RF-08 | Sitio web público tipo "sala de ventas" que explique y ofrezca cada giro; también es el punto de acceso de clientes a sus operaciones. |
-| RF-09 | Integración con terceros de compra/venta: API REST, webhooks, intercambio EDI/CSV. |
-| RF-10 | Consumir la API de GPS-Inversiones y generar alertas propias (la app del proveedor solo se ve en navegador y no genera alertas). |
+Recoge los requisitos del sistema tal como se derivan del enunciado del proyecto (`documento.md`) y de las clases de Desarrollo Web del 29/09 y 01/10/2026. Los requisitos se identifican con un código estable (RF para funcionales, RNF para no funcionales) que se utiliza en el resto de la documentación. El proyecto es de **modalidad individual**.
 
-## Requisitos no funcionales
+## 2. Requisitos funcionales
 
 | ID | Requisito |
-|----|-----------|
-| RNF-01 | Experiencia móvil multiplataforma (iOS, Android, escritorio): PWA o framework multiplataforma (React Native, Flutter, .NET MAUI). |
-| RNF-02 | Despliegue reproducible con contenedores Docker (`docker-compose.yml`). Se recomienda incluir scripts de BD o SQLite. |
-| RNF-03 | Propuesta de infraestructura en la nube con justificación (GCP, Azure, AWS, Rack Space, etc.). |
-| RNF-04 | Buenas prácticas de API (clase 17/09): versionado `/api/v1`, token en header `Authorization`, validación server-side, no exponer errores de BD, logs, códigos HTTP correctos. |
-| RNF-05 | Se permite y recomienda usar IA para generar código. |
+|---|---|
+| RF-01 | El sistema debe permitir a los empleados de cada giro llevar el control operativo de su giro, incluidos su presupuesto y sus gastos propios. |
+| RF-02 | Desde la sede central, los dueños y administradores generales deben poder controlar la operación y generar reportes para la toma de decisiones. |
+| RF-03 | Los clientes deben poder dar seguimiento a sus operaciones y transacciones, consultar reportes del estado de su relación con cada empresa del grupo y comunicarse con ella. |
+| RF-04 | El sistema debe permitir pedidos directos entre giros para su abastecimiento oportuno; por ejemplo, de la planta de proceso a la planta de extracción. |
+| RF-05 | El sistema debe emitir alertas y recordatorios dirigidos según el rol y el interés de cada persona: operativos, vendedores, administrativos, gerentes y dueños. |
+| RF-06 | El sistema debe generar reportes consolidados por giro y generales. |
+| RF-07 | El sistema debe permitir hacer pedidos en línea según el producto, o agendar reuniones y asignar un vendedor específico para cerrar el trato. |
+| RF-08 | Debe existir un sitio web público a modo de "sala de ventas" que presente y ofrezca cada giro. Ese sitio es también el punto de acceso de los clientes a sus operaciones. |
+| RF-09 | El sistema debe integrarse con empresas terceras de compra y venta mediante API REST, webhooks e intercambio de archivos EDI/CSV. |
+| RF-10 | El sistema debe consumir la API de GPS-Inversiones y generar alertas propias, ya que la aplicación del proveedor solo se visualiza en navegador y no genera alertas. |
 
-## Entregables y evaluación
+## 3. Requisitos no funcionales
 
-- **No se requiere el sistema completo.** Se evalúa: propuesta, diseño, avance funcional (login, parte visual) y justificación técnica.
-- Revisiones de avance semanales (video + archivos a la carpeta compartida). Entrega final el día del examen final.
-- Documentación (Canvas): carátula, introducción/problema, alcance, diagrama de componentes y dependencias con justificación, wireframes autorizados antes de desarrollar. El resumen de aportes por integrante aplica solo a grupos.
-- Wireframes con Pencil (open source) o Mockups. Evitar Bootstrap genérico.
-- Primer avance (martes 06/10): alcances, roles y problemas identificados.
-- Investigación individual de PWA (miércoles).
-- Laboratorio virtual de la universidad disponible si la máquina personal no alcanza (límite de horas).
+| ID | Requisito |
+|---|---|
+| RNF-01 | Experiencia móvil multiplataforma (iOS, Android y escritorio), mediante una PWA o un framework multiplataforma (React Native, Flutter o .NET MAUI). |
+| RNF-02 | Despliegue reproducible con contenedores Docker (`docker-compose.yml`). Se recomienda incluir scripts de base de datos o usar SQLite. |
+| RNF-03 | Propuesta de infraestructura en la nube con su justificación (GCP, Azure, AWS, Rackspace, entre otras). |
+| RNF-04 | Buenas prácticas de API vistas en la clase del 17/09: versionado (`/api/v1`), token en el encabezado `Authorization`, validación en el servidor, no exponer errores de la base de datos, registro de eventos (logs) y códigos HTTP correctos. |
+| RNF-05 | Se permite y recomienda el uso de inteligencia artificial para generar código. |
 
-## Pendiente de confirmar
+## 4. Entregables y evaluación
 
-- Fecha exacta del examen final / entrega.
-- Si el documento final del ingeniero (que iba a compartir en la plataforma) cambia algo respecto a `documento.md`.
+No se requiere el sistema completo. Se evalúan la propuesta, el diseño, el avance funcional (inicio de sesión y parte visual) y la justificación técnica.
+
+| Aspecto | Condición |
+|---|---|
+| Revisiones de avance | Semanales, con video y archivos en la carpeta compartida. |
+| Entrega final | El día del examen final. |
+| Documentación (Canvas) | Carátula, introducción y problema, alcance, diagrama de componentes y dependencias con justificación, y wireframes. El resumen de aportes por integrante aplica solo a grupos. |
+| Wireframes | Con Pencil (código abierto), Mockups u otra herramienta. Se presentan, pero no requieren autorización previa del curso. Se evita el uso de Bootstrap genérico. |
+| Primer avance (06/10) | Alcances, roles y problemas identificados. |
+| Investigación individual | PWA (miércoles). |
+| Recursos | El laboratorio virtual de la universidad está disponible si el equipo personal no alcanza (con límite de horas). |
+
+## 5. Puntos por confirmar
+
+- Fecha exacta del examen final y de la entrega.
+- Si el documento final que el docente compartirá en la plataforma modifica algo respecto de `documento.md`.
