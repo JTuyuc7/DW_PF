@@ -1,5 +1,109 @@
 @import "tailwindcss";
 
+/*
+  Identidad de la intranet: papel verdoso y tinta casi negra, con un verde mineral como único color de marca.
+  Los estados de los pedidos usan la paleta estándar de Tailwind para distinguirse de la marca.
+  Fuentes del sistema, para que la demostración funcione sin conexión.
+*/
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --color-ink: #1b2320;
+  --color-paper: #f2f3ef;
+  --color-surface: #fcfcfa;
+  --color-line: #d6dbd3;
+  --color-muted: #566259;
+  --color-brand: #1d5a4a;
+  --color-brand-deep: #14423a;
+  --color-brand-soft: #e1ede8;
+  --color-danger: #a3301f;
+  --color-danger-soft: #f6e3df;
+  --color-warn: #8a5a0b;
+  --color-warn-soft: #f7ecd2;
+}
+
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-paper font-sans text-ink antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 4rem;
+}
+
+/* Entrada de la portada: escalonada con animation-delay. El estado final es el visible. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.7s ease-out both;
+}
+
+/* Contenido que aparece al llegar a la vista (ver components/Reveal.tsx). Sin JavaScript todo queda visible. */
+[data-reveal] {
+  transition:
+    opacity 0.6s ease-out,
+    transform 0.6s ease-out;
+}
+[data-reveal="pending"] {
+  opacity: 0;
+  transform: translateY(18px);
+}
+
+/* Ilustración de la cadena de suministro */
+@keyframes drive {
+  from {
+    transform: translateX(-130px);
+  }
+  to {
+    transform: translateX(930px);
+  }
+}
+.art-truck {
+  animation: drive 16s linear infinite;
+}
+@keyframes smoke {
+  0% {
+    opacity: 0;
+    transform: translate(0, 6px) scale(0.6);
+  }
+  30% {
+    opacity: 0.55;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(10px, -34px) scale(1.4);
+  }
+}
+.art-smoke {
+  animation: smoke 5s ease-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  [data-reveal="pending"] {
+    opacity: 1;
+    transform: none;
+  }
 }

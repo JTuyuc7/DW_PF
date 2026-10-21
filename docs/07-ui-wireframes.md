@@ -157,7 +157,22 @@ Los wireframes están en `docs/wireframes/wireframes.html` (se abre en el navega
 - Tabla de las últimas lecturas (`GPS_EVENT`): hora, latitud, longitud y velocidad.
 - Un activo sin lecturas recientes se marca "sin señal". Los datos provienen del servicio GPS simulado descrito en [05-datos-y-apis](05-datos-y-apis.md), sección 6.
 
-## 7. Decisiones pendientes
+## 7. Estado de la implementación
+
+| Pantalla | Estado | Diferencias respecto del wireframe |
+|---|---|---|
+| P01 Inicio de sesión | Implementada | Lista de usuarios de demostración, visible solo fuera de producción. |
+| P03 Lista de pedidos | Implementada | Pestañas "Que debo atender", "Solicitados por mi giro" y "Todos"; filtro por estado y paginación. Sin filtro por fechas. Etiqueta "Retrasado" calculada en la interfaz. |
+| P04 Nuevo pedido | Implementada | Admite varias líneas de producto. Muestra la existencia del proveedor y advierte, sin bloquear, si la cantidad la supera. |
+| P05 Detalle y aprobación | Implementada | Botones según `allowedTransitions`, cancelación con confirmación en la página, historial y mensajes. |
+| P08 Sala de ventas | Implementada | Sitio público renderizado en el servidor, con cabecera y pie compartidos: landing en `/` (portada animada con ilustración, carrusel de los seis giros con su catálogo desde la API, sección para el personal), `/nosotros`, `/contacto` (sede central, sedes por giro y **formulario de solicitud de reunión**, en `/contacto#reunion`) y `/legal` (aviso legal y derechos de autor). No hay registro de usuarios: los clientes piden una reunión y la cuenta la crea la empresa. |
+| Reuniones (personal) | Implementada, sin wireframe | Pantalla `/reuniones` para vendedores, gerentes y dueño: solicitudes con datos de contacto, filtro por estado, y acciones de confirmar (con fecha y hora), marcar como realizada y cancelar según el rol. |
+| P02 Panel del giro | Implementada | Ruta `/panel`, página de entrada tras iniciar sesión. Indicadores: por atender, retrasados (como proveedor y como solicitante), pedidos del giro en curso, existencias bajo el mínimo y, para gerente y dueño, reuniones por confirmar. Incluye los pedidos más urgentes por atender y un bloque "Requiere atención". Diferencias con el wireframe: no hay alertas reales (el bloque se calcula al abrir la página con pedidos retrasados y stock bajo), y el dueño elige el giro en un selector. Quien no tiene panel (vendedor, administrativo, cliente) pasa a `/pedidos`. `/dashboard` redirige a `/panel`. |
+| P06, P07, P09 | Solo wireframe | Pendientes. |
+
+La interfaz usa el token en `sessionStorage`. Es suficiente para el MVP; en producción convendría una cookie `HttpOnly` para reducir el impacto de un XSS.
+
+## 8. Decisiones pendientes
 
 - Identidad visual (paleta, tipografía) para la implementación con Tailwind.
 - Si el panel del dueño incluye gráficas desde el MVP o solo cifras.

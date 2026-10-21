@@ -32,9 +32,12 @@ El proyecto dispone de menos de un mes, por lo que toda la solución se **diseñ
 
 | Capacidad | Diseñada | Implementada |
 |---|:---:|:---:|
-| Autenticación con JWT y roles | Sí | Esqueleto (login, `/me`) |
-| Pedido interno entre giros | Sí | Pendiente |
-| Sala de ventas y solicitud de reunión | Sí | Pendiente |
+| Autenticación con JWT y permisos por membresía (rol y giro) | Sí | Lista (API e interfaz de inicio de sesión) |
+| Pedido interno entre giros | Sí | Listo de extremo a extremo: crear, listar, aprobar y avanzar estados, mensajes y descuento de inventario |
+| Inventario (consulta y ajuste) y catálogo público (giros y productos) | Sí | API lista |
+| Panel por giro | Sí | Listo en `/panel`: indicadores, pedidos por atender y bloque "Requiere atención" (retrasos y stock bajo, sin alertas automáticas) |
+| Sala de ventas pública | Sí | Landing en `/` con carrusel de giros y catálogo, `/nosotros`, `/contacto` y `/legal` |
+| Solicitud de reunión | Sí | Formulario público en `/contacto#reunion`, asignación automática de vendedor y gestión por el personal en `/reuniones` |
 | Panel por giro y consolidado | Sí | Pendiente |
 | Alertas (pedido retrasado, exceso de velocidad) | Sí | Pendiente |
 | API para terceros (`/api/v1/b2b`) | Sí | Pendiente |
@@ -93,6 +96,8 @@ Requisito: Docker Desktop.
    | `WEB_ORIGIN` | Origen del frontend permitido por CORS (opcional, por defecto `http://localhost:3000`). |
    | `NEXT_PUBLIC_API_URL` | URL de la API vista desde el navegador (opcional, por defecto `http://localhost:4000`). |
 
+   `docker-compose.yml` define además `API_INTERNAL_URL` (`http://api:4000`), la dirección de la API vista desde el servidor de Next, que usa la landing para leer el catálogo.
+
    `.env` está ignorado por git. Si falta una variable obligatoria, `docker compose` falla indicando cuál.
 
 2. Levantar los servicios:
@@ -104,12 +109,57 @@ Requisito: Docker Desktop.
 | Servicio | URL |
 |---|---|
 | Web | http://localhost:3000 |
-| API | http://localhost:4000 (`GET /health`, `POST /api/v1/auth/login`, `GET /api/v1/auth/me`) |
+| API | http://localhost:4000 (`GET /health` y rutas bajo `/api/v1`; catálogo en [`docs/05-datos-y-apis.md`](docs/05-datos-y-apis.md)) |
 | PostgreSQL | localhost:5432 (credenciales definidas en `.env`) |
 | Almacenamiento S3 | http://localhost:8333 |
 
-Al iniciar, la API aplica el esquema y siembra usuarios demo (contraseña: el valor de `SEED_PASSWORD`):
-`dueno@transport.gt`, `gerente@transport.gt`, `vendedor@transport.gt`, `operativo@transport.gt`, `cliente@ejemplo.gt`.
+Al iniciar, la API aplica el esquema y siembra datos de ejemplo: los seis giros con sus sedes, un catálogo provisional de productos, existencias de inventario, un pedido interno y los usuarios demo. La contraseña de todos es el valor de `SEED_PASSWORD`.
+
+| Usuario | Rol y giro |
+|---|---|
+| `dueno@transport.gt` | Dueño (toda la organización) |
+| `gerente@transport.gt` | Gerente de Extracción |
+| `operativo.extraccion@transport.gt` | Operativo de Extracción |
+| `gerente.proceso@transport.gt` | Gerente de Proceso |
+| `operativo@transport.gt` | Operativo de Proceso |
+| `vendedor@transport.gt` | Vendedor de Extracción y Proceso |
+| `vendedor.proceso@transport.gt` | Vendedor de Proceso (con el anterior, se reparten las reuniones de Proceso) |
+| `administrativo@transport.gt` | Administrativo de Extracción |
+| `cliente@ejemplo.gt` | Sin membresías (los clientes se modelarán con su propia entidad) |
+
+El pedido de ejemplo lo solicita Proceso a Extracción, de modo que se puede recorrer el flujo completo: crear con el operativo de Proceso, aprobar con el gerente de Extracción, despachar con su operativo y confirmar la recepción desde Proceso.
+
+Si cambia el esquema de forma que `drizzle-kit push` necesite una confirmación interactiva (por ejemplo, un renombre), el contenedor no puede responderla. En desarrollo basta recrear el volumen de la base: `docker compose down` y `docker volume rm proyecto_final_pgdata`.
+
+### Ejecución sin construir imágenes (modo local)
+
+Para desarrollar sin reconstruir contenedores, solo la base de datos va en Docker; la API y la web corren en su máquina. Requisitos: Bun, Node.js y pnpm (o npm).
+
+```bash
+docker compose up -d db            # PostgreSQL, publicado en localhost:5432
+docker compose stop api web        # si estaban levantados, para liberar los puertos 4000 y 3000
+
+cd apps/api
+bun install
+bun run local:setup                # aplica el esquema y siembra los datos de ejemplo
+bun run local                      # API en http://localhost:4000, con recarga automática
+
+cd apps/web                        # en otra terminal
+pnpm install
+pnpm dev                           # web en http://localhost:3000
+```
+
+`pnpm dev` por sí solo no basta: la web necesita la API y la base de datos. La API lee el `.env` de la raíz y arma la conexión con las variables `POSTGRES_*` apuntando a `localhost`. Para quitar el límite de solicitudes de reunión use `MEETING_RATE_LIMIT=0` en el `.env`; sin esa variable, fuera de Docker el límite es de 10 por IP y hora (en Docker Compose viene desactivado).
+
+## Pruebas
+
+```bash
+cd apps/api
+bun test src          # pruebas unitarias de la máquina de estados del pedido
+bun run test:e2e      # pruebas de extremo a extremo contra la API en Docker (usa ../../.env)
+```
+
+La prueba de extremo a extremo crea pedidos y mueve inventario, por lo que solo debe usarse con la base de desarrollo.
 
 ## Estructura del repositorio
 
@@ -124,7 +174,9 @@ docker-compose.yml  Servicios locales: db, storage, api, web
 
 ## Estado
 
-El esqueleto funciona: login con roles (JWT) y servicios levantados con Compose. La documentación de diseño y los wireframes están completos. Siguen la implementación del pedido interno (membresías por giro, pedidos, estados) y la estimación de costos de la propuesta de nube.
+La documentación de diseño y los wireframes están completos. El flujo del pedido interno entre giros funciona de extremo a extremo: API probada (permisos por membresía, máquina de estados, historial, mensajes e inventario) e interfaz con inicio de sesión, lista, nuevo pedido y detalle con aprobación (pantallas P01, P03, P04 y P05). Siguen el resto de las capacidades del MVP (alertas automáticas, panel consolidado del dueño, API para terceros, PWA) y la estimación de costos de la propuesta de nube.
+
+Para recorrer el flujo: entre como `operativo@transport.gt` (Proceso), cree un pedido a Extracción, salga y entre como `gerente@transport.gt` para aprobarlo.
 
 ## Autoría
 

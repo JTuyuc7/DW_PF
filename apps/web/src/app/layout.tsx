@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "TransPort | Transporte, materiales y construcción en Guatemala",
   description:
-    "Grupo empresarial con seis giros: extracción, procesamiento, transporte, alquiler de maquinaria, ventas y construcción.",
+    "Grupo empresarial con seis giros: extracción minera, proceso de materia prima, maquinaria, transporte de materia prima y de productos, y construcción.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
