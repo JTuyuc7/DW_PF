@@ -215,4 +215,13 @@ Resumen; el detalle está en [05-datos-y-apis](05-datos-y-apis.md).
 
 ## 10. Estado actual de la implementación
 
-Existe un esqueleto funcional con: aplicación Next.js (inicio, inicio de sesión, panel base), API Bun/Hono con autenticación JWT y roles, PostgreSQL y almacenamiento S3 en Docker Compose, y gestión de secretos por variables de entorno. El avance del resto está en [08-plan-y-roles](08-plan-y-roles.md).
+Existe un esqueleto funcional con: aplicación Next.js (inicio, inicio de sesión, panel base), PostgreSQL y almacenamiento S3 en Docker Compose, y gestión de secretos por variables de entorno.
+
+La API Bun/Hono implementa el backend del pedido interno entre giros:
+
+- Autenticación JWT con permisos por **membresía** (rol y giro), leídos de la base en cada solicitud. El token solo identifica al usuario.
+- Formato de error uniforme con `requestId` y validación Zod en toda entrada.
+- Pedidos internos con máquina de estados, permisos por lado del pedido (proveedor o solicitante), historial, hilo de mensajes y descuento de existencias al despachar, en una sola transacción.
+- Consulta de inventario por rol y catálogo público de giros y productos.
+
+El comportamiento está cubierto por pruebas unitarias de la máquina de estados (`bun test`). Las pruebas de extremo a extremo se hicieron contra la API en Docker. El avance del resto está en [08-plan-y-roles](08-plan-y-roles.md).

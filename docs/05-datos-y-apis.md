@@ -38,12 +38,14 @@ erDiagram
 
     ORDER ||--|{ ORDER_ITEM : "contiene"
     ORDER ||--o{ ORDER_MESSAGE : "tiene hilo"
+    ORDER ||--o{ ORDER_STATUS_EVENT : "registra cambios de estado"
     BUSINESS_UNIT ||--o{ ORDER : "origen (provee)"
     BUSINESS_UNIT ||--o{ ORDER : "destino interno (solicita)"
     CUSTOMER ||--o{ ORDER : "solicita"
     API_CLIENT ||--o{ ORDER : "crea"
 
     CUSTOMER ||--o{ MEETING : "agenda"
+    BUSINESS_UNIT ||--o{ MEETING : "es el giro de interés de"
     USER ||--o{ MEETING : "vendedor asignado"
 
     ASSET ||--o{ GPS_EVENT : "reporta"
@@ -124,12 +126,26 @@ erDiagram
         int author_user_id FK
         text body
     }
+    ORDER_STATUS_EVENT {
+        int id PK
+        int order_id FK
+        enum from_status "nulo al crear el pedido"
+        enum to_status
+        int actor_user_id FK
+        timestamp created_at
+    }
     MEETING {
         int id PK
         int customer_id FK
-        int seller_user_id FK
-        timestamp scheduled_at
+        int business_unit_id FK "giro de interés"
+        int seller_user_id FK "nulo si el giro no tiene vendedores"
         enum status "solicitada, confirmada, realizada, cancelada"
+        string contact_name
+        string contact_email
+        string contact_phone
+        text message
+        date preferred_date "opcional"
+        timestamp scheduled_at "se fija al confirmar"
     }
     ASSET {
         int id PK
@@ -208,7 +224,12 @@ erDiagram
 | Pedido de cliente | Tiene `customer_id`; el cliente solo ve sus propios pedidos. |
 | Pedido de tercero | Tiene `api_client_id` y `external_ref`; la pareja (`api_client_id`, `external_ref`) es única para garantizar idempotencia. |
 | Estados de pedido | Solo se permiten las transiciones válidas (por ejemplo, `solicitado → aprobado → en_proceso → despachado → entregado`); `cancelado` es posible antes de `despachado`. |
-| Inventario | `quantity` no puede ser negativa. Si cae bajo `min_threshold`, se evalúa la regla `stock_bajo`. |
+| Despacho | Al pasar un pedido a `despachado` se descuentan las existencias del giro proveedor, empezando por la sede con más existencia. Si no alcanzan, la API responde `422 INSUFFICIENT_STOCK` y el pedido conserva su estado (la operación es una sola transacción). |
+| Inventario | `quantity` no puede ser negativa (restricción en la base). Si cae bajo `min_threshold`, se evalúa la regla `stock_bajo`. |
+| Visibilidad de pedidos | Un pedido es visible para el dueño y para quien tiene alguna membresía en el giro proveedor o en el solicitante. Para el resto, el pedido no existe (`404`). |
+| Solicitud de reunión | La hace una persona sin cuenta desde la sala de ventas. Se crea (o se reutiliza, si el NIT coincide) el cliente y se asigna al vendedor del giro de interés con menos reuniones abiertas (`solicitada` o `confirmada`); en empate, al de menor id. Si el giro no tiene vendedores queda sin asignar. |
+| Protección del formulario público | Campo trampa que un humano no llena, y límite configurable de solicitudes exitosas por IP y hora (`429` con `Retry-After`). El límite en memoria sirve para un solo proceso; con varias instancias debe moverse a un almacén compartido o al WAF. |
+| Privacidad de reuniones | Los datos de contacto solo los ven el vendedor asignado, el gerente del giro y el dueño. El dueño consulta pero no modifica. |
 | Alertas | Cada alerta se dirige por el rol objetivo de su regla y por el giro; solo se notifica a quienes tienen membresía en ese giro (o global). |
 | Presupuesto | Un presupuesto por giro y período; los gastos se acumulan contra él. |
 
@@ -217,14 +238,15 @@ erDiagram
 | Entidad | MVP | Nota |
 |---|---|---|
 | `USER` | Sí | Existe. |
-| `MEMBERSHIP` | Sí | Reemplaza la columna `role` actual de `users`. |
-| `BUSINESS_UNIT`, `SITE` | Sí | Datos semilla con los seis giros. |
-| `PRODUCT`, `INVENTORY_ITEM` | Sí | Pocos productos semilla. |
-| `ORDER`, `ORDER_ITEM`, `ORDER_MESSAGE` | Sí | Flujo del pedido interno entre giros. |
+| `MEMBERSHIP` | Sí | Implementada. Reemplazó la columna `role` de `users`; el rol `cliente` queda fuera hasta modelar `CUSTOMER`. |
+| `BUSINESS_UNIT`, `SITE` | Sí | Implementadas, con datos semilla de los seis giros y sus sedes. |
+| `PRODUCT`, `INVENTORY_ITEM` | Sí | Implementadas, con pocos productos semilla (catálogo provisional). |
+| `ORDER`, `ORDER_ITEM`, `ORDER_MESSAGE`, `ORDER_STATUS_EVENT` | Sí | Implementadas para el pedido interno entre giros (`kind = interno`). |
 | `ASSET`, `GPS_EVENT` | Sí | Alimentadas por el servicio GPS simulado. |
 | `ALERT_RULE`, `ALERT`, `NOTIFICATION` | Sí | Al menos una regla real. |
 | `API_CLIENT` | Sí | Para el endpoint de pedidos de terceros. |
-| `CUSTOMER`, `CUSTOMER_USER`, `MEETING` | Parcial | Registro de cliente y solicitud de reunión sencillos. |
+| `CUSTOMER`, `MEETING` | Sí | Implementadas: solicitud pública de reunión, asignación de vendedor y gestión por el personal. |
+| `CUSTOMER_USER` | Solo diseño | Cuentas de acceso de clientes; no hay autorregistro, la cuenta la crea la empresa. |
 | `BUDGET`, `EXPENSE` | Solo diseño | Fuera del corte vertical. |
 | `WEBHOOK_DELIVERY` | Solo diseño | Extra si sobra tiempo. |
 
@@ -273,45 +295,53 @@ erDiagram
 
 `code` es estable y apto para programas; `message` es legible para personas; `requestId` correlaciona con los logs. Nunca se devuelven mensajes de la base de datos ni trazas.
 
-> Nota de implementación: el esqueleto actual responde `{ "error": "texto" }`. Se unificará con este formato al implementar el manejador de errores común.
+Todas las respuestas de error de la API usan este formato, incluidos los errores de validación (`400 VALIDATION_ERROR`, con un elemento en `details` por campo) y los de autenticación (`401 UNAUTHORIZED`, `401 INVALID_CREDENTIALS`). Cada respuesta incluye además el encabezado `X-Request-Id`, con el mismo valor que `requestId`.
 
 ### 5.4 Catálogo de endpoints
 
-**Marca:** ✔ implementado en el MVP, ◇ solo diseñado.
+**Marca:** ✔ listo (ya implementado), ✔ MVP (incluido en el MVP, aún no implementado), ◇ solo diseñado.
 
 **Autenticación**
 
 | Método y ruta | Descripción | Acceso | Estado |
 |---|---|---|---|
-| `POST /auth/login` | Inicia sesión; devuelve token y usuario. | Público | ✔ (existe) |
-| `GET /auth/me` | Usuario autenticado y sus membresías. | Autenticado | ✔ (existe) |
+| `POST /auth/login` | Inicia sesión; devuelve token y usuario con sus membresías. | Público | ✔ listo |
+| `GET /auth/me` | Usuario autenticado y sus membresías. | Autenticado | ✔ listo |
 | `POST /auth/refresh` | Renueva el token. | Autenticado | ◇ |
 
 **Catálogo y sala de ventas**
 
 | Método y ruta | Descripción | Acceso | Estado |
 |---|---|---|---|
-| `GET /public/business-units` | Giros con su descripción. | Público | ✔ |
-| `GET /public/products` | Productos y servicios visibles. | Público | ✔ |
-| `POST /public/meeting-requests` | Solicitud de reunión (se asigna vendedor). | Público | ✔ |
+| `GET /public/business-units` | Giros con su descripción y las localidades donde operan (`sites`). | Público | ✔ listo |
+| `GET /public/products` | Productos y servicios visibles. Filtro `?businessUnitId=`. | Público | ✔ listo |
+| `POST /public/meeting-requests` | Solicitud de reunión: nombre, correo, teléfono y giro de interés obligatorios; empresa, NIT, fecha preferida (hasta 180 días) y mensaje opcionales. Asigna vendedor y responde `201` sin devolver datos del cliente. | Público | ✔ listo |
+
+**Reuniones (personal)**
+
+| Método y ruta | Descripción | Acceso | Estado |
+|---|---|---|---|
+| `GET /meetings` | Solicitudes de reunión con datos de contacto. Filtro `status`. | Vendedor (las suyas), gerente (las de su giro), dueño (todas) | ✔ listo |
+| `PATCH /meetings/{id}/status` | Confirma (con `scheduledAt` futuro), marca como realizada o cancela. Transiciones: `solicitada → confirmada \| cancelada`, `confirmada → realizada \| cancelada`. | Vendedor asignado o gerente del giro | ✔ listo |
 
 **Pedidos**
 
 | Método y ruta | Descripción | Acceso | Estado |
 |---|---|---|---|
-| `GET /orders` | Lista según permisos (giro, cliente o propios). | Autenticado | ✔ |
-| `POST /orders` | Crea un pedido (interno o de cliente). | Operativo, vendedor, gerente, cliente | ✔ |
-| `GET /orders/{id}` | Detalle con líneas e historial. | Con permiso | ✔ |
-| `PATCH /orders/{id}/status` | Cambia estado respetando transiciones. | Gerente del giro proveedor, operativo | ✔ |
-| `GET /orders/{id}/messages` | Hilo de comunicación del pedido. | Con permiso | ✔ |
-| `POST /orders/{id}/messages` | Publica un mensaje. | Con permiso | ✔ |
+| `GET /orders` | Lista según permisos, con líneas. Filtros: `status`, `businessUnitId`, `relation` (`supplier` = "que debo atender", `requester` = "solicitados por mi giro"), `from`, `to` (hora de Guatemala). | Autenticado | ✔ listo |
+| `POST /orders` | Crea un pedido interno (`status` inicial `solicitado` o `borrador`). Los pedidos de cliente y de tercero se agregarán con sus entidades. | Operativo y gerente del giro solicitante | ✔ listo |
+| `GET /orders/{id}` | Detalle con líneas, historial de estados y `allowedTransitions` (acciones que el usuario puede ejecutar ahora). | Con permiso | ✔ listo |
+| `PATCH /orders/{id}/status` | Cambia el estado respetando la máquina de estados y los permisos de la sección 5.6. | Según estado y lado del pedido | ✔ listo |
+| `GET /orders/{id}/messages` | Hilo de comunicación del pedido. | Con permiso | ✔ listo |
+| `POST /orders/{id}/messages` | Publica un mensaje (1 a 2000 caracteres). | Con permiso | ✔ listo |
 
 **Inventario**
 
 | Método y ruta | Descripción | Acceso | Estado |
 |---|---|---|---|
-| `GET /inventory` | Existencias por sede y producto. | Operativo, gerente, dueño | ✔ |
-| `PATCH /inventory/{siteId}/{productId}` | Ajusta existencias. | Operativo, gerente | ✔ |
+| `GET /inventory` | Existencias por sede y producto, con `belowMinimum`. Cada rol ve solo los giros donde es operativo o gerente; el dueño ve todos. | Operativo, gerente, dueño | ✔ listo |
+| `GET /inventory/availability?businessUnitId=` | Productos de un giro con la existencia total, sin detalle por sede. Permite pedir a otro giro sin acceder a su inventario. | Quien puede crear pedidos, dueño | ✔ listo |
+| `PATCH /inventory/{siteId}/{productId}` | Fija la cantidad existente (conteo físico o recepción de material). Cantidad mayor o igual que cero. No guarda quién ni cuándo lo ajustó; la auditoría queda como mejora. | Operativo y gerente del giro dueño de la sede | ✔ listo |
 
 **Flota y GPS**
 
@@ -334,7 +364,7 @@ erDiagram
 | Método y ruta | Descripción | Acceso | Estado |
 |---|---|---|---|
 | `GET /reports/overview` | Indicadores consolidados de todos los giros. | Dueño | ✔ |
-| `GET /reports/business-units/{id}` | Indicadores de un giro. | Gerente del giro, dueño | ✔ |
+| `GET /reports/business-units/{id}` | Panel de un giro: pedidos por estado y retrasados como proveedor y como solicitante, los cinco pedidos más urgentes por atender, existencias bajo el mínimo y, solo para gerente y dueño, conteo de reuniones por confirmar. Un pedido está retrasado si su fecha requerida pasó y sigue en `solicitado`, `aprobado` o `en_proceso` (fecha en hora de Guatemala). | Gerente y operativo del giro, dueño | ✔ listo |
 | `GET /reports/customers/{id}` | Estado de la relación de un cliente con cada giro. | Cliente, vendedor | ◇ |
 | `GET /reports/{type}/export?format=csv` | Exportación. | Con permiso | ◇ |
 
@@ -380,12 +410,18 @@ Respuesta `201`:
   "kind": "interno",
   "status": "solicitado",
   "supplierUnitId": 1,
+  "supplierUnitName": "Extracción minera",
   "requestingUnitId": 2,
+  "requestingUnitName": "Proceso de materia prima",
   "dueDate": "2026-11-05",
-  "items": [{ "productId": 10, "quantity": 120 }],
-  "createdAt": "2026-10-20T15:04:11Z"
+  "createdAt": "2026-10-20T15:04:11.000Z",
+  "items": [{ "productId": 10, "productName": "Piedra caliza en bruto", "unit": "tonelada", "quantity": 120 }],
+  "history": [{ "fromStatus": null, "toStatus": "solicitado", "actorName": "L. Pérez", "createdAt": "2026-10-20T15:04:11.000Z" }],
+  "allowedTransitions": []
 }
 ```
+
+`allowedTransitions` lista los estados a los que el usuario autenticado puede llevar el pedido ahora. Para quien solicitó el pedido está vacía; para el gerente del giro proveedor contiene `aprobado` y `cancelado`. La interfaz la usa para mostrar solo los botones que corresponden.
 
 ### 5.6 Máquina de estados del pedido
 
@@ -403,6 +439,19 @@ stateDiagram-v2
     entregado --> [*]
     cancelado --> [*]
 ```
+
+Quién puede ejecutar cada transición. El **proveedor** es el giro que provee el producto y el **solicitante** el que lo pide; los roles se evalúan con las membresías del usuario en el giro correspondiente.
+
+| Transición | Lado | Roles |
+|---|---|---|
+| `borrador → solicitado` | Solicitante | Operativo, gerente |
+| `solicitado → aprobado` | Proveedor | Gerente |
+| `aprobado → en_proceso` | Proveedor | Operativo, gerente |
+| `en_proceso → despachado` | Proveedor | Operativo, gerente (descuenta existencias) |
+| `despachado → entregado` | Solicitante | Operativo, gerente (confirma la recepción) |
+| `solicitado`, `aprobado` o `en_proceso` `→ cancelado` | Proveedor o solicitante | Gerente |
+
+Una transición que no está en el diagrama responde `409 ORDER_INVALID_TRANSITION`, aunque el usuario tenga permisos. Una transición válida sin permiso responde `403 FORBIDDEN`.
 
 ## 6. Contrato del servicio GPS simulado
 

@@ -4,9 +4,12 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
+    "local": "bun --env-file=../../.env --watch src/index.ts",
+    "local:setup": "bun --env-file=../../.env run db:push && bun --env-file=../../.env run seed",
     "start": "bun src/index.ts",
     "seed": "bun src/db/seed.ts",
-    "test": "bun test",
+    "test": "bun test src",
+    "test:e2e": "bun --env-file=../../.env scripts/e2e.ts",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
