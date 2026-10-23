@@ -131,7 +131,8 @@ erDiagram
         int order_id FK
         enum from_status "nulo al crear el pedido"
         enum to_status
-        int actor_user_id FK
+        int actor_user_id FK "nulo si actuó un cliente de API"
+        int actor_api_client_id FK
         timestamp created_at
     }
     MEETING {
@@ -151,7 +152,7 @@ erDiagram
         int id PK
         int business_unit_id FK
         enum kind "camion, maquinaria"
-        string plate_or_code UK
+        string name
         string gps_external_id UK
     }
     GPS_EVENT {
@@ -164,10 +165,9 @@ erDiagram
     }
     ALERT_RULE {
         int id PK
-        int business_unit_id FK "nulo = global"
-        enum type "pedido_retrasado, exceso_velocidad, stock_bajo"
+        enum type UK "pedido_retrasado, exceso_velocidad, stock_bajo"
         jsonb params
-        enum target_role
+        enum_array target_roles
         bool active
     }
     ALERT {
@@ -177,7 +177,11 @@ erDiagram
         enum severity "info, aviso, critica"
         jsonb payload
         enum status "abierta, atendida"
+        string dedupe_key "identifica la condición"
         timestamp created_at
+        timestamp attended_at
+        int attended_by_user_id FK
+        timestamp resolved_at "la condición cesó"
     }
     NOTIFICATION {
         int id PK
@@ -202,10 +206,14 @@ erDiagram
     API_CLIENT {
         int id PK
         string name
-        string key_hash
-        text_array scopes
-        string webhook_url
-        string webhook_secret
+        string key_prefix
+        string key_hash UK
+        text_array scopes "catalog:read, orders:read, orders:write"
+        int_array unit_ids "giros a los que puede pedir"
+        bool active
+        timestamp last_used_at
+        string webhook_url "solo diseño"
+        string webhook_secret "solo diseño"
     }
     WEBHOOK_DELIVERY {
         int id PK
@@ -222,7 +230,7 @@ erDiagram
 |---|---|
 | Pedido interno | Tiene `supplier_unit_id` y `requesting_unit_id` distintos. El giro proveedor lo aprueba. |
 | Pedido de cliente | Tiene `customer_id`; el cliente solo ve sus propios pedidos. |
-| Pedido de tercero | Tiene `api_client_id` y `external_ref`; la pareja (`api_client_id`, `external_ref`) es única para garantizar idempotencia. |
+| Pedido de tercero | Tiene `api_client_id` y `external_ref` (restricción en la base) y no tiene usuario creador ni giro solicitante; la pareja (`api_client_id`, `external_ref`) es única para garantizar idempotencia. Contiene productos de un solo giro, entre los asignados al cliente. En la aplicación se muestra con el cliente como solicitante. |
 | Estados de pedido | Solo se permiten las transiciones válidas (por ejemplo, `solicitado → aprobado → en_proceso → despachado → entregado`); `cancelado` es posible antes de `despachado`. |
 | Despacho | Al pasar un pedido a `despachado` se descuentan las existencias del giro proveedor, empezando por la sede con más existencia. Si no alcanzan, la API responde `422 INSUFFICIENT_STOCK` y el pedido conserva su estado (la operación es una sola transacción). |
 | Inventario | `quantity` no puede ser negativa (restricción en la base). Si cae bajo `min_threshold`, se evalúa la regla `stock_bajo`. |
@@ -230,7 +238,7 @@ erDiagram
 | Solicitud de reunión | La hace una persona sin cuenta desde la sala de ventas. Se crea (o se reutiliza, si el NIT coincide) el cliente y se asigna al vendedor del giro de interés con menos reuniones abiertas (`solicitada` o `confirmada`); en empate, al de menor id. Si el giro no tiene vendedores queda sin asignar. |
 | Protección del formulario público | Campo trampa que un humano no llena, y límite configurable de solicitudes exitosas por IP y hora (`429` con `Retry-After`). El límite en memoria sirve para un solo proceso; con varias instancias debe moverse a un almacén compartido o al WAF. |
 | Privacidad de reuniones | Los datos de contacto solo los ven el vendedor asignado, el gerente del giro y el dueño. El dueño consulta pero no modifica. |
-| Alertas | Cada alerta se dirige por el rol objetivo de su regla y por el giro; solo se notifica a quienes tienen membresía en ese giro (o global). |
+| Alertas | Cada alerta se dirige por los roles objetivo de su regla (`target_roles`) y por el giro afectado: la reciben quienes tienen uno de esos roles en ese giro y el dueño, que recibe todas. Una condición abre **una sola** alerta mientras siga vigente (`dedupe_key` única entre las no resueltas): una nueva lectura solo actualiza sus datos y su severidad. Cuando la condición cesa (el pedido se despacha o cancela, se repone el stock, baja la velocidad) la alerta se resuelve sola: pasa a `atendida` sin responsable. Si alguien la atiende y la condición sigue, no se vuelve a abrir hasta que cese y reaparezca. |
 | Presupuesto | Un presupuesto por giro y período; los gastos se acumulan contra él. |
 
 ## 4. Alcance de implementación del modelo
@@ -242,9 +250,10 @@ erDiagram
 | `BUSINESS_UNIT`, `SITE` | Sí | Implementadas, con datos semilla de los seis giros y sus sedes. |
 | `PRODUCT`, `INVENTORY_ITEM` | Sí | Implementadas, con pocos productos semilla (catálogo provisional). |
 | `ORDER`, `ORDER_ITEM`, `ORDER_MESSAGE`, `ORDER_STATUS_EVENT` | Sí | Implementadas para el pedido interno entre giros (`kind = interno`). |
-| `ASSET`, `GPS_EVENT` | Sí | Alimentadas por el servicio GPS simulado. |
-| `ALERT_RULE`, `ALERT`, `NOTIFICATION` | Sí | Al menos una regla real. |
-| `API_CLIENT` | Sí | Para el endpoint de pedidos de terceros. |
+| `ASSET`, `GPS_EVENT` | Sí | Implementadas. Cinco activos semilla (tres camiones y dos equipos) alimentados por el simulador `bun run gps:sim`. |
+| `ALERT_RULE`, `ALERT` | Sí | Implementadas con las tres reglas (`pedido_retrasado`, `stock_bajo`, `exceso_velocidad`). La notificación es la propia alerta en la aplicación: no hay tabla `NOTIFICATION` porque el destinatario se calcula por rol y giro. Push y correo quedan como propuesta. |
+| `NOTIFICATION` | Solo diseño | Entrega por canal (push, correo) con lectura por usuario. |
+| `API_CLIENT` | Sí | Implementada: clave con hash, alcances y giros permitidos. `webhook_url` y `webhook_secret` quedan solo en el diseño. |
 | `CUSTOMER`, `MEETING` | Sí | Implementadas: solicitud pública de reunión, asignación de vendedor y gestión por el personal. |
 | `CUSTOMER_USER` | Solo diseño | Cuentas de acceso de clientes; no hay autorregistro, la cuenta la crea la empresa. |
 | `BUDGET`, `EXPENSE` | Solo diseño | Fuera del corte vertical. |
@@ -347,23 +356,25 @@ Todas las respuestas de error de la API usan este formato, incluidos los errores
 
 | Método y ruta | Descripción | Acceso | Estado |
 |---|---|---|---|
-| `GET /assets` | Camiones y maquinaria por giro. | Con permiso | ✔ |
-| `GET /assets/{id}/events` | Historial de posiciones y velocidad. | Con permiso | ✔ |
-| `POST /gps/ingest` | Recibe eventos desde el servicio GPS. | Servicio interno | ✔ |
+| `GET /assets?kind=&status=&businessUnitId=` | Camiones y maquinaria con su última lectura y su estado: `sin_senal` (sin lecturas o la última supera `staleMinutes`), `exceso` (velocidad sobre el límite), `en_ruta` (camión en movimiento), `activa` (maquinaria en movimiento) o `detenido`. El límite y la antigüedad son los parámetros de la regla `exceso_velocidad`, para que la pantalla y las alertas coincidan. Quien no puede ver ningún giro recibe `403`; el dueño ve todos y gerentes y operativos los suyos. | Dueño, gerente y operativo del giro | ✔ listo |
+| `GET /assets/{id}/events?limit=` | Lecturas del activo, de la más reciente a la más antigua (`limit` de 1 a 200, 60 por defecto), con el límite de velocidad vigente. Para quien no ve ese giro el activo no existe (`404`). | Dueño, gerente y operativo del giro | ✔ listo |
+| `POST /gps/ingest` | Recibe lecturas `{ events: [...] }` (hasta 500). Acepta las de dispositivos conocidos y devuelve `rejected` con las demás: `201` si se guardó alguna, `422` si ninguna. Tras guardar, evalúa las reglas. | Token de servicio (`X-Service-Token`) | ✔ listo |
 
 **Alertas**
 
 | Método y ruta | Descripción | Acceso | Estado |
 |---|---|---|---|
-| `GET /alerts` | Alertas dirigidas al usuario. | Autenticado | ✔ |
-| `PATCH /alerts/{id}` | Marca como atendida. | Destinatario | ✔ |
-| `GET /alert-rules` · `PUT /alert-rules/{id}` | Consulta y configura reglas. | Gerente, dueño | ◇ |
+| `GET /alerts?status=&severity=&type=&businessUnitId=&page=&pageSize=` | Alertas dirigidas al usuario, `abierta` por defecto. Devuelve además `open` (abiertas por severidad). Las abiertas van de más a menos graves. Quien no recibe alertas obtiene una lista vacía. | Autenticado | ✔ listo |
+| `PATCH /alerts/{id}` | Cuerpo `{ "status": "atendida" }`. Registra quién y cuándo. Idempotente. Para quien no la recibe la alerta no existe (`404`). | Destinatario | ✔ listo |
+| `POST /alerts/evaluate` | Fuerza un barrido de reglas sin esperar al programado. | Dueño | ✔ listo |
+| `GET /alert-rules` | Reglas vigentes con sus parámetros. | Gerente, dueño | ✔ listo |
+| `PUT /alert-rules/{id}` | Configura parámetros, roles objetivo y activación. | Gerente, dueño | ◇ |
 
 **Reportes y panel**
 
 | Método y ruta | Descripción | Acceso | Estado |
 |---|---|---|---|
-| `GET /reports/overview` | Indicadores consolidados de todos los giros. | Dueño | ✔ |
+| `GET /reports/overview?from=&to=` | Consolidado de los seis giros. Sin parámetros usa el mes en curso (hora de Guatemala); `from` y `to` se indican juntos y el período no supera un año. Devuelve `totals`, una fila por giro (`openAsSupplier`, `openAsRequester`, `overdue`, `deliveredInPeriod`, `openAlerts`, `criticalAlerts`, `assets`, `assetsMoving`, `situation`) y las cinco alertas críticas más recientes. Solo las entregas dependen del período (se cuentan por la fecha de confirmación de recepción); lo demás es el estado actual. `situation` es `atencion` con alguna alerta crítica o dos o más pedidos retrasados, `vigilar` con un retraso o alguna alerta abierta, y `normal` en otro caso. Un activo está "en ruta" si su última lectura tiene menos de 15 minutos y marca velocidad mayor que cero. | Dueño | ✔ listo |
 | `GET /reports/business-units/{id}` | Panel de un giro: pedidos por estado y retrasados como proveedor y como solicitante, los cinco pedidos más urgentes por atender, existencias bajo el mínimo y, solo para gerente y dueño, conteo de reuniones por confirmar. Un pedido está retrasado si su fecha requerida pasó y sigue en `solicitado`, `aprobado` o `en_proceso` (fecha en hora de Guatemala). | Gerente y operativo del giro, dueño | ✔ listo |
 | `GET /reports/customers/{id}` | Estado de la relación de un cliente con cada giro. | Cliente, vendedor | ◇ |
 | `GET /reports/{type}/export?format=csv` | Exportación. | Con permiso | ◇ |
@@ -378,9 +389,10 @@ Todas las respuestas de error de la API usan este formato, incluidos los errores
 
 | Método y ruta | Descripción | Acceso | Estado |
 |---|---|---|---|
-| `POST /b2b/orders` | Crea un pedido; idempotente por `externalRef`. | API key con alcance `orders:write` | ✔ |
-| `GET /b2b/orders/{id}` | Estado de un pedido propio. | `orders:read` | ✔ |
-| `GET /b2b/orders?updatedSince=` | Consulta incremental. | `orders:read` | ◇ |
+| `GET /b2b/products` | Productos que el cliente puede pedir (los de sus giros asignados), con su id, unidad y giro proveedor. | `catalog:read` | ✔ listo |
+| `POST /b2b/orders` | Crea un pedido; idempotente por `externalRef` (ver 5.5b). | `orders:write` | ✔ listo |
+| `GET /b2b/orders/{id}` | Estado e historial de un pedido propio. | `orders:read` | ✔ listo |
+| `GET /b2b/orders?status=&updatedSince=&page=&pageSize=` | Pedidos propios, los más recientemente modificados primero. `updatedSince` (ISO 8601 con zona horaria) permite la consulta incremental. | `orders:read` | ✔ listo |
 | Webhooks salientes | `order.status_changed`, firmados con HMAC-SHA256 en `X-TransPort-Signature`. | Configurado por cliente | ◇ |
 | Importación CSV/EDI | Carga masiva de pedidos por archivo. | `orders:write` | ◇ |
 
@@ -423,6 +435,51 @@ Respuesta `201`:
 
 `allowedTransitions` lista los estados a los que el usuario autenticado puede llevar el pedido ahora. Para quien solicitó el pedido está vacía; para el gerente del giro proveedor contiene `aprobado` y `cancelado`. La interfaz la usa para mostrar solo los botones que corresponden.
 
+### 5.5b Ejemplo: pedido de un tercero por la API B2B
+
+Un cliente (por ejemplo, un cementero) pide productos de un giro con su clave de API. `externalRef` es el identificador del pedido en su propio sistema y hace la creación idempotente.
+
+```http
+POST /api/v1/b2b/orders
+Authorization: Bearer tp_live_...
+Content-Type: application/json
+
+{
+  "externalRef": "OC-2026-0147",
+  "dueDate": "2026-11-15",
+  "items": [{ "productId": 1, "quantity": 150 }]
+}
+```
+
+```json
+{
+  "id": 102,
+  "externalRef": "OC-2026-0147",
+  "status": "solicitado",
+  "dueDate": "2026-11-15",
+  "supplier": { "id": 1, "name": "Extracción minera" },
+  "items": [{ "productId": 1, "productName": "Piedra caliza en bruto", "unit": "tonelada", "quantity": 150 }],
+  "history": [{ "fromStatus": null, "toStatus": "solicitado", "at": "2026-10-22T20:00:00.000Z" }],
+  "createdAt": "2026-10-22T20:00:00.000Z",
+  "updatedAt": "2026-10-22T20:00:00.000Z"
+}
+```
+
+| Situación | Respuesta |
+|---|---|
+| Pedido nuevo | `201` |
+| Misma `externalRef` y mismo contenido (reintento) | `200` con el pedido existente, sin crear otro. También ante solicitudes simultáneas. |
+| Misma `externalRef` con otro contenido | `409 IDEMPOTENCY_CONFLICT` |
+| Clave ausente, desconocida, mal formada o de un cliente inactivo | `401` (sin distinguir cuál, para no revelar claves válidas) |
+| Clave sin el alcance necesario | `403 INSUFFICIENT_SCOPE` |
+| Producto inexistente / de un giro no asignado al cliente | `422 PRODUCT_NOT_FOUND` / `422 PRODUCT_NOT_ALLOWED` |
+| Productos de más de un giro | `422 MIXED_SUPPLIERS` (un pedido por giro) |
+| Fecha anterior a hoy (hora de Guatemala) | `422 DUE_DATE_IN_PAST` |
+
+**Claves y alcances.** Cada cliente tiene alcances (`catalog:read`, `orders:read`, `orders:write`) y una lista de giros a los que puede pedir. La clave tiene la forma `tp_live_` más 43 caracteres aleatorios; se muestra una sola vez al crearla (`bun run b2b:client`) y en la base solo se guarda su hash SHA-256 y un prefijo para reconocerla. Un cliente solo ve sus propios pedidos; el de otro cliente no existe para él (`404`).
+
+**Vida del pedido.** Nace en `solicitado`. El personal del giro proveedor lo gestiona con la misma máquina de estados (5.6); como un pedido de tercero no tiene giro solicitante, el personal del proveedor también confirma la entrega. El cliente ve el estado y su historial al consultarlo; no ve usuarios, existencias ni otros giros.
+
 ### 5.6 Máquina de estados del pedido
 
 ```mermaid
@@ -461,8 +518,8 @@ GPS-Inversiones no publica una API conocida para este proyecto. Se **asume** el 
 |---|---|
 | Dispositivo | Identificador externo (`gpsExternalId`) relacionado con `ASSET.gps_external_id`. |
 | Evento | `{ deviceId, recordedAt, lat, lng, speedKmh }`. |
-| Entrega | El servicio simulado envía eventos a `POST /gps/ingest` con un token de servicio. En producción puede ser consulta periódica a la API del proveedor. |
-| Regla de ejemplo | `exceso_velocidad`: alerta crítica al gerente y operativos del giro si `speedKmh` supera `params.maxSpeedKmh` para un camión. |
+| Entrega | El servicio simulado envía eventos a `POST /gps/ingest` con el encabezado `X-Service-Token` (variable `GPS_SERVICE_TOKEN`; sin ella la ruta responde `503`). En producción puede ser consulta periódica a la API del proveedor. Se rechazan las lecturas de dispositivos desconocidos y las fechadas más de 5 minutos en el futuro. |
+| Regla de ejemplo | `exceso_velocidad`: alerta crítica al gerente y operativos del giro si la **última** lectura de un activo supera `params.maxSpeedKmh` (80 por defecto) y no tiene más de `params.staleMinutes` (15) de antigüedad. Una lectura posterior por debajo del límite, o la falta de lecturas, cierra la alerta. |
 
 ## 7. Decisiones pendientes
 

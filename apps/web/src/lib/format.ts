@@ -105,3 +105,41 @@ export function panelUnits(memberships: Membership[]) {
 export const isOwnerOf = (memberships: Membership[]) => memberships.some((m) => m.role === "dueno" && m.businessUnitId === null);
 
 export const hasPanel = (memberships: Membership[]) => isOwnerOf(memberships) || panelUnits(memberships).length > 0;
+
+export const ALERT_TYPE_LABEL = {
+  pedido_retrasado: "Pedido retrasado",
+  stock_bajo: "Stock bajo",
+  exceso_velocidad: "Exceso de velocidad",
+} as const;
+
+export const SEVERITY_LABEL = { info: "Informativa", aviso: "Aviso", critica: "Crítica" } as const;
+
+/** Quienes reciben alertas hoy: el dueño y los gerentes u operativos de un giro (las reglas apuntan a esos roles). */
+export const receivesAlerts = (memberships: Membership[]) => isOwnerOf(memberships) || panelUnits(memberships).length > 0;
+
+export const SITUATION_LABEL = { normal: "Normal", vigilar: "Vigilar", atencion: "Atención" } as const;
+
+/** Frase corta que resume una alerta, para listas donde no cabe el detalle. */
+export function alertSummary(a: { type: keyof typeof ALERT_TYPE_LABEL; payload: Record<string, any> }) {
+  const p = a.payload;
+  if (a.type === "pedido_retrasado") return `Pedido #${p.orderId}: ${p.daysLate} ${p.daysLate === 1 ? "día" : "días"} de retraso`;
+  if (a.type === "stock_bajo") return `${p.productName} en ${p.siteName}: ${formatQty(p.quantity, p.unit)} (mínimo ${formatQty(p.minThreshold, p.unit)})`;
+  return `${p.assetName}: ${p.speedKmh} km/h (límite ${p.maxSpeedKmh})`;
+}
+
+export const ASSET_STATUS_LABEL = {
+  en_ruta: "En ruta",
+  activa: "Activa",
+  detenido: "Detenido",
+  exceso: "Exceso de velocidad",
+  sin_senal: "Sin señal",
+} as const;
+
+/** Antigüedad legible de un instante ISO ("hace 3 min"). */
+export function timeAgo(iso: string, now = Date.now()) {
+  const s = Math.max(0, Math.round((now - new Date(iso).getTime()) / 1000));
+  if (s < 60) return "hace segundos";
+  if (s < 3600) return `hace ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `hace ${Math.floor(s / 3600)} h`;
+  return `hace ${Math.floor(s / 86400)} d`;
+}

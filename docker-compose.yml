@@ -32,6 +32,11 @@ services:
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:3000}
       # Solicitudes de reunión por IP y hora (0 = sin límite, para desarrollo)
       MEETING_RATE_LIMIT: ${MEETING_RATE_LIMIT:-0}
+      GPS_SERVICE_TOKEN: ${GPS_SERVICE_TOKEN:?Define GPS_SERVICE_TOKEN en .env}
+      # Cliente de ejemplo de la API B2B (opcional, solo desarrollo)
+      B2B_DEMO_API_KEY: ${B2B_DEMO_API_KEY:-}
+      # Segundos entre barridos del motor de alertas (0 = solo bajo demanda)
+      ALERT_INTERVAL_SECONDS: ${ALERT_INTERVAL_SECONDS:-60}
       SEED_PASSWORD: ${SEED_PASSWORD:?Define SEED_PASSWORD en .env}
       PORT: 4000
     ports:

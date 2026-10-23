@@ -42,6 +42,7 @@ const t = {
   vendedor: await login("vendedor@transport.gt"),
   vendProc: await login("vendedor.proceso@transport.gt"),
   admin: await login("administrativo@transport.gt"),
+  gerTmp: await login("gerente.transporte@transport.gt"),
   cliente: await login("cliente@ejemplo.gt"),
 };
 
@@ -244,12 +245,12 @@ let orderId = 0;
   const sup = (await call("GET", `/orders?businessUnitId=${EXT}&relation=supplier`, t.gerExt)).json;
   check("relation=supplier del giro EXT", sup.total >= 1 && sup.items.every((o: any) => o.supplierUnitId === EXT));
   const req = (await call("GET", `/orders?businessUnitId=${EXT}&relation=requester`, t.gerExt)).json;
-  check("relation=requester de EXT: ninguno", req.total === 0);
+  check("relation=requester de EXT: solo pedidos que EXT solicita", req.items.every((o: any) => o.requestingUnitId === EXT));
   const mine = (await call("GET", "/orders?relation=requester", t.opPro)).json;
   check("sin giro: relation=requester usa mis giros", mine.total >= 1 && mine.items.every((o: any) => o.requestingUnitId === PRO));
   const st = (await call("GET", "/orders?status=entregado", t.dueno)).json;
   check("filtro por estado", st.items.length >= 1 && st.items.every((o: any) => o.status === "entregado"));
-  const other = (await call("GET", `/orders?businessUnitId=${MAQ}`, t.opPro)).json;
+  const other = (await call("GET", `/orders?businessUnitId=${unitId("TPR")}`, t.opPro)).json;
   check("giro ajeno -> vacío, sin filtrar datos", other.total === 0);
   const day = new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 10); // hoy en Guatemala (UTC-6)
   const range = (await call("GET", `/orders?from=${day}&to=${day}`, t.dueno)).json;
@@ -264,9 +265,9 @@ let orderId = 0;
 // --- Inventario
 {
   const dueno = await call("GET", "/inventory", t.dueno);
-  check("inventario: el dueño ve todo", dueno.status === 200 && dueno.json.items.length === 5, dueno.json.items?.length);
+  check("inventario: el dueño ve todo", dueno.status === 200 && new Set(dueno.json.items.map((i: any) => i.businessUnitId)).size === 6, dueno.json.items?.length);
   const pro = await call("GET", "/inventory", t.opPro);
-  check("inventario: operativo PRO solo ve PRO", pro.status === 200 && pro.json.items.length === 2 && pro.json.items.every((i: any) => i.businessUnitId === PRO));
+  check("inventario: operativo PRO solo ve PRO", pro.status === 200 && pro.json.items.length >= 2 && pro.json.items.every((i: any) => i.businessUnitId === PRO));
   check("inventario: vendedor -> 403", (await call("GET", "/inventory", t.vendedor)).status === 403);
   check("inventario: cliente -> 403", (await call("GET", "/inventory", t.cliente)).status === 403);
   check("inventario: administrativo -> 403", (await call("GET", "/inventory", t.admin)).status === 403);
@@ -276,7 +277,7 @@ let orderId = 0;
   check("disponibilidad: Proceso ve totales de Extracción sin detalle por sede", av.status === 200 && av.json.items.length === 2 && av.json.items.every((i: any) => typeof i.available === "number" && i.siteId === undefined), av.json);
   check("disponibilidad: suma las sedes del proveedor", Math.round(av.json.items.find((i: any) => i.productId === caliza).available) === Math.round(dueno.json.items.filter((i: any) => i.productId === caliza).reduce((s: number, i: any) => s + i.quantity, 0)));
   const avMaq = await call("GET", `/inventory/availability?businessUnitId=${MAQ}`, t.gerPro);
-  check("disponibilidad: producto sin inventario aparece con 0", avMaq.status === 200 && avMaq.json.items.length === 1 && avMaq.json.items[0].available === 0, avMaq.json);
+  check("disponibilidad: giro de servicios muestra su capacidad", avMaq.status === 200 && avMaq.json.items.length === 1 && avMaq.json.items[0].available > 0, avMaq.json);
   check("disponibilidad: vendedor -> 403", (await call("GET", `/inventory/availability?businessUnitId=${EXT}`, t.vendedor)).status === 403);
   check("disponibilidad: cliente -> 403", (await call("GET", `/inventory/availability?businessUnitId=${EXT}`, t.cliente)).status === 403);
   check("disponibilidad: sin giro -> 400", (await call("GET", "/inventory/availability", t.opPro)).status === 400);
@@ -427,6 +428,351 @@ let orderId = 0;
   const orphan = all.find((m: any) => m.businessUnitId === MAQ).id as number;
   check("reunión sin vendedor: nadie del giro la gestiona -> 404", (await patch(t.gerExt, orphan, { status: "cancelada" })).status === 404);
   check("reunión inexistente -> 404", (await patch(t.vendedor, 999999, { status: "cancelada" })).status === 404);
+}
+
+// --- Alertas y GPS
+{
+  const GPS_TOKEN = process.env.GPS_SERVICE_TOKEN;
+  if (!GPS_TOKEN) throw new Error("GPS_SERVICE_TOKEN no está definida");
+  const ingest = async (events: any[], token: string | null = GPS_TOKEN) => {
+    const res = await fetch(API + "/gps/ingest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token !== null ? { "X-Service-Token": token } : {}) },
+      body: JSON.stringify({ events }),
+    });
+    return { status: res.status, json: (await res.json().catch(() => null)) as any };
+  };
+  const reading = (deviceId: string, speedKmh: number, over: any = {}) => ({ deviceId, recordedAt: new Date().toISOString(), lat: 15.47, lng: -90.37, speedKmh, ...over });
+  const evaluate = () => call("POST", "/alerts/evaluate", t.dueno);
+  const list = async (tok: string, qs = "") => (await call("GET", `/alerts?pageSize=100${qs ? "&" + qs : ""}`, tok)).json;
+  const find = (items: any[], type: string, pred: (p: any) => boolean) => items.find((a) => a.type === type && pred(a.payload));
+
+  // Ingesta: autenticación y validación
+  check("gps: sin token -> 401", (await ingest([reading("GPS-TMP-01", 50)], null)).status === 401);
+  check("gps: token incorrecto -> 401", (await ingest([reading("GPS-TMP-01", 50)], "no-es-el-token")).status === 401);
+  check("gps: un JWT de usuario no sirve como token de servicio -> 401", (await ingest([reading("GPS-TMP-01", 50)], t.dueno)).status === 401);
+  check("gps: lista vacía -> 400", (await ingest([])).status === 400);
+  check("gps: velocidad negativa -> 400", (await ingest([reading("GPS-TMP-01", -5)])).status === 400);
+  check("gps: latitud fuera de rango -> 400", (await ingest([reading("GPS-TMP-01", 50, { lat: 123 })])).status === 400);
+  check("gps: fecha sin zona horaria -> 400", (await ingest([reading("GPS-TMP-01", 50, { recordedAt: "2026-10-22T10:00:00" })])).status === 400);
+  const unknown = await ingest([reading("GPS-NO-EXISTE", 50)]);
+  check("gps: dispositivo desconocido -> 422 y se informa", unknown.status === 422 && unknown.json.accepted === 0 && unknown.json.rejected[0].deviceId === "GPS-NO-EXISTE", unknown.json);
+  const future = await ingest([reading("GPS-TMP-01", 50, { recordedAt: new Date(Date.now() + 3600e3).toISOString() })]);
+  check("gps: lectura en el futuro se rechaza", future.status === 422 && future.json.rejected[0].reason === "Fecha en el futuro", future.json);
+  const mixed = await ingest([reading("GPS-TMP-01", 50), reading("GPS-NO-EXISTE", 50)]);
+  check("gps: lote mixto acepta lo válido y rechaza el resto", mixed.status === 201 && mixed.json.accepted === 1 && mixed.json.rejected.length === 1, mixed.json);
+
+  // Reglas y permisos de consulta
+  check("alertas: sin token -> 401", (await call("GET", "/alerts")).status === 401);
+  const rules = await call("GET", "/alert-rules", t.gerExt);
+  check("reglas: el gerente las consulta (3 tipos)", rules.status === 200 && rules.json.items.length === 3 && rules.json.items.some((r: any) => r.type === "exceso_velocidad" && r.params.maxSpeedKmh === 80), rules.json);
+  check("reglas: un operativo no -> 403", (await call("GET", "/alert-rules", t.opExt)).status === 403);
+  check("evaluar: solo el dueño -> 403", (await call("POST", "/alerts/evaluate", t.gerExt)).status === 403);
+  check("filtro inválido -> 400", (await call("GET", "/alerts?severity=zzz", t.dueno)).status === 400);
+
+  // Exceso de velocidad: llega al gerente del giro y al dueño, a nadie más
+  await ingest([reading("GPS-TMP-01", 40)]);
+  await evaluate();
+  const quiet = await list(t.gerTmp);
+  check("exceso: a 40 km/h no hay alerta del camión", !find(quiet.items, "exceso_velocidad", (p) => p.assetName === "Camión TMP-01"));
+
+  const hot = await ingest([reading("GPS-TMP-01", 112)]);
+  check("exceso: la ingesta devuelve 201", hot.status === 201 && hot.json.accepted === 1, hot.json);
+  const mine = await list(t.gerTmp);
+  const alert = find(mine.items, "exceso_velocidad", (p) => p.assetName === "Camión TMP-01");
+  check("exceso: el gerente del giro la recibe, crítica y con datos", alert && alert.severity === "critica" && alert.status === "abierta" && alert.payload.speedKmh === 112 && alert.payload.maxSpeedKmh === 80 && alert.businessUnitName === "Transporte de materia prima", alert);
+  check("exceso: el dueño también la recibe", !!find((await list(t.dueno)).items, "exceso_velocidad", (p) => p.assetName === "Camión TMP-01"));
+  for (const [name, tok] of [["gerente EXT", t.gerExt], ["operativo PRO", t.opPro], ["vendedor", t.vendedor], ["administrativo", t.admin], ["cliente", t.cliente]] as const) {
+    check(`exceso: no la recibe ${name}`, !find((await list(tok)).items, "exceso_velocidad", (p) => p.assetName === "Camión TMP-01"));
+  }
+  check("alertas: el cliente sin membresías ve una lista vacía", (await list(t.cliente)).total === 0);
+  check("alertas: el resumen cuenta críticas abiertas", mine.open.critica >= 1 && mine.open.total === mine.open.info + mine.open.aviso + mine.open.critica, mine.open);
+
+  // Sin duplicados mientras siga la condición
+  const countBefore = (await list(t.gerTmp)).items.filter((a: any) => a.payload.assetName === "Camión TMP-01").length;
+  await ingest([reading("GPS-TMP-01", 125)]);
+  await evaluate();
+  const again = (await list(t.gerTmp)).items.filter((a: any) => a.payload.assetName === "Camión TMP-01");
+  check("exceso: otra lectura alta no duplica la alerta, la actualiza", countBefore === 1 && again.length === 1 && again[0].id === alert.id && again[0].payload.speedKmh === 125, again);
+
+  // Atender
+  const other = await call("PATCH", `/alerts/${alert.id}`, t.gerExt, { status: "atendida" });
+  check("atender: otro giro no la ve -> 404", other.status === 404 && other.json.error.code === "ALERT_NOT_FOUND", other.json);
+  check("atender: el vendedor -> 404", (await call("PATCH", `/alerts/${alert.id}`, t.vendedor, { status: "atendida" })).status === 404);
+  check("atender: estado inválido -> 400", (await call("PATCH", `/alerts/${alert.id}`, t.gerTmp, { status: "abierta" })).status === 400);
+  check("atender: alerta inexistente -> 404", (await call("PATCH", "/alerts/999999", t.gerTmp, { status: "atendida" })).status === 404);
+  const done = await call("PATCH", `/alerts/${alert.id}`, t.gerTmp, { status: "atendida" });
+  check("atender: el gerente del giro la marca -> 200 con responsable", done.status === 200 && done.json.status === "atendida" && done.json.attendedByName === "Gerente Transporte Demo" && done.json.autoResolved === false, done.json);
+  check("atender: es idempotente", (await call("PATCH", `/alerts/${alert.id}`, t.gerTmp, { status: "atendida" })).status === 200);
+  check("atender: sale de las abiertas y aparece en las atendidas", !(await list(t.gerTmp)).items.some((a: any) => a.id === alert.id) && (await list(t.gerTmp, "status=atendida")).items.some((a: any) => a.id === alert.id));
+
+  // Atendida pero con la condición vigente: no se vuelve a crear
+  await ingest([reading("GPS-TMP-01", 130)]);
+  await evaluate();
+  check("atendida con exceso vigente: no se abre otra", !(await list(t.gerTmp)).items.some((a: any) => a.payload.assetName === "Camión TMP-01"));
+  // Al normalizarse y volver a excederse sí es un evento nuevo
+  await ingest([reading("GPS-TMP-01", 45)]);
+  await ingest([reading("GPS-TMP-01", 99)]);
+  const renewed = find((await list(t.gerTmp)).items, "exceso_velocidad", (p) => p.assetName === "Camión TMP-01");
+  check("nuevo exceso tras normalizarse: alerta nueva", renewed && renewed.id !== alert.id, renewed);
+
+  // Resolución automática
+  await ingest([reading("GPS-TMP-01", 50)]);
+  const auto = (await list(t.gerTmp, "status=atendida")).items.find((a: any) => a.id === renewed.id);
+  check("al bajar la velocidad la alerta se resuelve sola", auto && auto.autoResolved === true && auto.attendedByName === null && auto.resolvedAt, auto);
+
+  // Filtros
+  const crit = await list(t.dueno, "severity=critica&type=exceso_velocidad&status=atendida");
+  check("filtros: severidad y tipo", crit.items.length > 0 && crit.items.every((a: any) => a.severity === "critica" && a.type === "exceso_velocidad"));
+  const byUnit = await list(t.dueno, `type=exceso_velocidad&businessUnitId=${EXT}`);
+  check("filtro por giro", byUnit.items.every((a: any) => a.businessUnitId === EXT));
+  const p1 = await call("GET", "/alerts?status=atendida&pageSize=1", t.dueno);
+  check("paginación", p1.json.items.length === 1 && p1.json.pageSize === 1 && p1.json.total >= 2, p1.json);
+
+  // Stock bajo: ajustar inventario por debajo del mínimo
+  const inv = (await call("GET", `/inventory?businessUnitId=${EXT}`, t.gerExt)).json.items.find((i: any) => i.siteName === "Quetzaltenango" && i.productId === caliza);
+  const invUrl = `/inventory/${inv.siteId}/${caliza}`;
+  await call("PATCH", invUrl, t.opExt, { quantity: 60 });
+  await evaluate();
+  const stock = find((await list(t.opExt)).items, "stock_bajo", (p) => p.siteId === inv.siteId && p.productId === caliza);
+  check("stock bajo: el operativo del giro la recibe, de aviso", stock && stock.severity === "aviso" && stock.payload.quantity === 60 && stock.payload.minThreshold === 100, stock);
+  check("stock bajo: el gerente del giro y el dueño también", !!find((await list(t.gerExt)).items, "stock_bajo", (p) => p.siteId === inv.siteId) && !!find((await list(t.dueno)).items, "stock_bajo", (p) => p.siteId === inv.siteId));
+  check("stock bajo: el otro giro no", !find((await list(t.gerPro)).items, "stock_bajo", (p) => p.siteId === inv.siteId));
+  await call("PATCH", invUrl, t.opExt, { quantity: 0 });
+  await evaluate();
+  const empty = find((await list(t.opExt)).items, "stock_bajo", (p) => p.siteId === inv.siteId && p.productId === caliza);
+  check("stock bajo: sin existencias sube a crítica (misma alerta)", empty && empty.severity === "critica" && empty.id === stock.id, empty);
+  await call("PATCH", invUrl, t.gerExt, { quantity: 450 });
+  await evaluate();
+  const restored = (await list(t.opExt, "status=atendida")).items.find((a: any) => a.id === stock.id);
+  check("stock bajo: al reponer se resuelve sola", restored && restored.autoResolved === true, restored);
+
+  // Pedido retrasado: se crea un pedido y se vence su fecha directamente en la base (la API no admite fechas pasadas)
+  const { default: postgres } = await import("postgres");
+  const { databaseUrl } = await import("../src/db/url");
+  const sql = postgres(databaseUrl());
+  const gtDay = (ago: number) => new Date(Date.now() - 6 * 3600e3 - ago * 864e5).toISOString().slice(0, 10); // día en Guatemala (UTC-6)
+  const mk = await call("POST", "/orders", t.opPro, createBody());
+  const lateId = mk.json.id as number;
+  await sql`update orders set due_date = ${gtDay(5)} where id = ${lateId}`;
+  await evaluate();
+  const late = find((await list(t.gerExt)).items, "pedido_retrasado", (p) => p.orderId === lateId);
+  check("pedido retrasado: lo recibe el gerente del proveedor, con 5 días es crítica", late && late.severity === "critica" && late.payload.daysLate >= 4 && late.payload.requestingUnitName && late.payload.items.length === 1, late);
+  check("pedido retrasado: también el operativo del proveedor y el dueño", !!find((await list(t.opExt)).items, "pedido_retrasado", (p) => p.orderId === lateId) && !!find((await list(t.dueno)).items, "pedido_retrasado", (p) => p.orderId === lateId));
+  check("pedido retrasado: el solicitante no la recibe", !find((await list(t.gerPro)).items, "pedido_retrasado", (p) => p.orderId === lateId));
+  await sql`update orders set due_date = ${gtDay(1)} where id = ${lateId}`;
+  await evaluate();
+  const soft = find((await list(t.gerExt)).items, "pedido_retrasado", (p) => p.orderId === lateId);
+  check("pedido retrasado: con 1 día baja a aviso y conserva la alerta", soft && soft.severity === "aviso" && soft.id === late.id, soft);
+  await call("PATCH", `/orders/${lateId}/status`, t.gerExt, { status: "cancelado" });
+  await evaluate();
+  const closed = (await list(t.gerExt, "status=atendida")).items.find((a: any) => a.id === late.id);
+  check("pedido retrasado: al cancelar el pedido la alerta se resuelve sola", closed && closed.autoResolved === true, closed);
+  await sql.end();
+
+  // Dejar el entorno sin alertas de la prueba: la lectura final del camión queda normal
+  await ingest([reading("GPS-TMP-01", 50)]);
+}
+
+// --- Panel consolidado del dueño
+{
+  const ov = await call("GET", "/reports/overview", t.dueno);
+  check("overview: el dueño lo consulta", ov.status === 200 && ov.json.units.length === 6, ov.json);
+  for (const [name, tok] of [["gerente", t.gerExt], ["operativo", t.opExt], ["vendedor", t.vendedor], ["administrativo", t.admin], ["cliente", t.cliente]] as const) {
+    check(`overview: ${name} -> 403`, (await call("GET", "/reports/overview", tok)).status === 403);
+  }
+  check("overview: sin token -> 401", (await call("GET", "/reports/overview")).status === 401);
+  const month = new Date(Date.now() - 6 * 3600e3).toISOString().slice(0, 7);
+  check("overview: por defecto el mes en curso", ov.json.period.from === `${month}-01` && ov.json.period.to.startsWith(month), ov.json.period);
+  const sum = (k: string) => ov.json.units.reduce((n: number, u: any) => n + u[k], 0);
+  check("overview: alertas y retrasos del total cuadran con los giros", ov.json.totals.openAlerts === sum("openAlerts") && ov.json.totals.criticalAlerts === sum("criticalAlerts") && ov.json.totals.overdueOrders === sum("overdue") && ov.json.totals.assets === sum("assets"), ov.json.totals);
+  check("overview: las alertas abiertas coinciden con /alerts", ov.json.totals.openAlerts === (await call("GET", "/alerts?pageSize=1", t.dueno)).json.open.total);
+  check("overview: cada giro trae una situación válida", ov.json.units.every((u: any) => ["normal", "vigilar", "atencion"].includes(u.situation)));
+  check("overview: la extracción tiene pedidos entregados este mes", ov.json.units.find((u: any) => u.code === "EXT").deliveredInPeriod >= 1 && ov.json.totals.deliveredInPeriod === sum("deliveredInPeriod"));
+  check("overview: lista de críticas ordenada y acotada", ov.json.criticalAlerts.length <= 5 && ov.json.criticalAlerts.length <= ov.json.totals.criticalAlerts);
+  const past = await call("GET", "/reports/overview?from=2020-01-01&to=2020-01-31", t.dueno);
+  check("overview: un período pasado no tiene entregas", past.status === 200 && past.json.totals.deliveredInPeriod === 0 && past.json.period.from === "2020-01-01", past.json);
+  check("overview: solo from -> 400", (await call("GET", "/reports/overview?from=2026-01-01", t.dueno)).status === 400);
+  check("overview: from posterior a to -> 400", (await call("GET", "/reports/overview?from=2026-02-01&to=2026-01-01", t.dueno)).status === 400);
+  check("overview: período mayor a un año -> 400", (await call("GET", "/reports/overview?from=2024-01-01&to=2026-01-01", t.dueno)).status === 400);
+  check("overview: fecha imposible -> 400", (await call("GET", "/reports/overview?from=2026-02-30&to=2026-03-01", t.dueno)).status === 400);
+}
+
+// --- Flota y GPS (P09)
+{
+  const post = async (events: any[]) => {
+    const res = await fetch(API + "/gps/ingest", { method: "POST", headers: { "Content-Type": "application/json", "X-Service-Token": process.env.GPS_SERVICE_TOKEN! }, body: JSON.stringify({ events }) });
+    return res.status;
+  };
+  const now = () => new Date().toISOString();
+  const fleet = async (tok: string, qs = "") => call("GET", `/assets${qs}`, tok);
+  const byName = (r: any, name: string) => r.json.items.find((a: any) => a.name === name);
+
+  check("flota: sin token -> 401", (await call("GET", "/assets")).status === 401);
+  for (const [name, tok] of [["vendedor", t.vendedor], ["administrativo", t.admin], ["cliente", t.cliente]] as const) {
+    check(`flota: ${name} -> 403`, (await fleet(tok)).status === 403);
+  }
+  const all = await fleet(t.dueno);
+  check("flota: el dueño ve los 5 activos con límite y antigüedad de la regla", all.status === 200 && all.json.items.length >= 5 && all.json.maxSpeedKmh === 80 && all.json.staleMinutes === 15, all.json);
+  const mineTmp = await fleet(t.gerTmp);
+  check("flota: el gerente de transporte solo ve su giro", mineTmp.json.items.length === 2 && mineTmp.json.items.every((a: any) => a.businessUnitName === "Transporte de materia prima"), mineTmp.json.items);
+  check("flota: el gerente de Extracción solo ve el suyo", (await fleet(t.gerExt)).json.items.every((a: any) => a.businessUnitId === EXT));
+  check("flota: un operativo de Proceso (sin activos) ve lista vacía", (await fleet(t.opPro)).json.items.length === 0);
+  check("flota: filtro por tipo", (await fleet(t.dueno, "?kind=maquinaria")).json.items.every((a: any) => a.kind === "maquinaria"));
+  check("flota: filtro por giro", (await fleet(t.dueno, `?businessUnitId=${EXT}`)).json.items.every((a: any) => a.businessUnitId === EXT));
+  check("flota: tipo inválido -> 400", (await fleet(t.dueno, "?kind=barco")).status === 400);
+  check("flota: estado inválido -> 400", (await fleet(t.dueno, "?status=volando")).status === 400);
+
+  // Estados según la última lectura
+  check("flota: ingesta de prueba", (await post([{ deviceId: "GPS-TMP-02", recordedAt: now(), lat: 14.97, lng: -89.53, speedKmh: 120 }])) === 201);
+  let tmp2 = byName(await fleet(t.gerTmp), "Camión TMP-02");
+  check("flota: sobre el límite -> exceso, con su última lectura", tmp2.status === "exceso" && tmp2.lastReading.speedKmh === 120 && tmp2.lastReading.lat === 14.97, tmp2);
+  check("flota: el filtro por estado funciona", (await fleet(t.dueno, "?status=exceso")).json.items.some((a: any) => a.name === "Camión TMP-02"));
+  await post([{ deviceId: "GPS-TMP-02", recordedAt: now(), lat: 14.97, lng: -89.53, speedKmh: 0 }]);
+  check("flota: velocidad cero -> detenido", byName(await fleet(t.gerTmp), "Camión TMP-02").status === "detenido");
+  await post([{ deviceId: "GPS-TMP-02", recordedAt: now(), lat: 14.97, lng: -89.53, speedKmh: 55 }]);
+  check("flota: en movimiento -> en_ruta", byName(await fleet(t.gerTmp), "Camión TMP-02").status === "en_ruta");
+  const exc = byName(await fleet(t.dueno, `?businessUnitId=${EXT}`), "Cargador EXT-01");
+  check("flota: la maquinaria en movimiento está activa, no en ruta", ["activa", "detenido"].includes(exc.status), exc);
+
+  // Historial
+  const ev = await call("GET", `/assets/${tmp2.id}/events?limit=5`, t.gerTmp);
+  check("eventos: más recientes primero y acotados", ev.status === 200 && ev.json.items.length === 5 && ev.json.items[0].speedKmh === 55 && ev.json.items[0].recordedAt >= ev.json.items[1].recordedAt && ev.json.maxSpeedKmh === 80, ev.json);
+  check("eventos: el dueño también", (await call("GET", `/assets/${tmp2.id}/events`, t.dueno)).status === 200);
+  check("eventos: otro giro -> 404", (await call("GET", `/assets/${tmp2.id}/events`, t.gerExt)).status === 404);
+  check("eventos: vendedor -> 404", (await call("GET", `/assets/${tmp2.id}/events`, t.vendedor)).status === 404);
+  check("eventos: activo inexistente -> 404", (await call("GET", "/assets/999999/events", t.dueno)).status === 404);
+  check("eventos: límite 0 -> 400", (await call("GET", `/assets/${tmp2.id}/events?limit=0`, t.dueno)).status === 400);
+  check("eventos: límite excesivo -> 400", (await call("GET", `/assets/${tmp2.id}/events?limit=500`, t.dueno)).status === 400);
+  check("eventos: id no numérico -> 400", (await call("GET", "/assets/abc/events", t.dueno)).status === 400);
+}
+
+// --- API B2B (terceros)
+{
+  const DEMO_KEY = process.env.B2B_DEMO_API_KEY;
+  if (!DEMO_KEY) throw new Error("B2B_DEMO_API_KEY no está definida");
+  const { default: postgres } = await import("postgres");
+  const { databaseUrl } = await import("../src/db/url");
+  const { generateApiKey } = await import("../src/b2b/keys");
+  const sql = postgres(databaseUrl());
+
+  // Clientes de prueba: solo lectura, restringido a Extracción e inactivo.
+  const mkClient = async (name: string, scopes: string[], unitIds: number[], active = true) => {
+    const k = generateApiKey();
+    const [row] = await sql`insert into api_clients (name, key_prefix, key_hash, scopes, unit_ids, active) values (${name}, ${k.keyPrefix}, ${k.keyHash}, ${scopes}, ${unitIds}, ${active}) returning id`;
+    return { key: k.key, id: row.id as number };
+  };
+  const readOnly = await mkClient("e2e solo lectura", ["orders:read", "catalog:read"], [EXT]);
+  const extOnly = await mkClient("e2e solo Extracción", ["orders:read", "orders:write", "catalog:read"], [EXT]);
+  const inactive = await mkClient("e2e inactivo", ["orders:read", "orders:write"], [EXT], false);
+
+  const b2b = async (method: string, path: string, key?: string, body?: unknown) => {
+    const res = await fetch(`${API}/b2b${path}`, {
+      method,
+      headers: { ...(key ? { Authorization: `Bearer ${key}` } : {}), ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: res.status, json: (await res.json().catch(() => null)) as any };
+  };
+  const ref = () => `E2E-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const due = new Date(Date.now() + 15 * 864e5).toISOString().slice(0, 10);
+  const body = (over: any = {}) => ({ externalRef: ref(), dueDate: due, items: [{ productId: caliza, quantity: 25 }], ...over });
+
+  // Autenticación
+  check("b2b: sin clave -> 401", (await b2b("GET", "/orders")).status === 401);
+  check("b2b: clave basura -> 401", (await b2b("GET", "/orders", "no-es-una-clave")).status === 401);
+  check("b2b: clave con forma válida pero desconocida -> 401", (await b2b("GET", "/orders", `tp_live_${"A".repeat(43)}`)).status === 401);
+  check("b2b: un JWT de usuario no sirve como clave -> 401", (await b2b("GET", "/orders", t.dueno)).status === 401);
+  const inact = await b2b("GET", "/orders", inactive.key);
+  check("b2b: clave de un cliente inactivo -> 401 (igual que una desconocida)", inact.status === 401 && inact.json.error.code === "UNAUTHORIZED", inact.json);
+  check("b2b: la clave de API no sirve en las rutas de usuarios -> 401", (await call("GET", "/orders", DEMO_KEY)).status === 401);
+
+  // Alcances
+  const ro = await b2b("POST", "/orders", readOnly.key, body());
+  check("b2b: sin orders:write -> 403 INSUFFICIENT_SCOPE", ro.status === 403 && ro.json.error.code === "INSUFFICIENT_SCOPE", ro.json);
+
+  // Catálogo
+  const cat = await b2b("GET", "/products", DEMO_KEY);
+  check("b2b: catálogo solo de los giros del cliente (Extracción y Proceso)", cat.status === 200 && cat.json.items.length >= 4 && cat.json.items.every((p: any) => [EXT, PRO].includes(p.supplier.id)), cat.json);
+  check("b2b: catálogo acotado a Extracción para el otro cliente", (await b2b("GET", "/products", extOnly.key)).json.items.every((p: any) => p.supplier.id === EXT));
+
+  // Crear
+  const first = body();
+  const created = await b2b("POST", "/orders", DEMO_KEY, first);
+  check("b2b: crear pedido -> 201 solicitado", created.status === 201 && created.json.status === "solicitado" && created.json.externalRef === first.externalRef && created.json.supplier.id === EXT && created.json.items[0].quantity === 25, created.json);
+  check("b2b: la respuesta no expone datos internos", !("createdByUserId" in created.json) && !("apiClientId" in created.json) && created.json.history.length === 1 && !("actorName" in created.json.history[0]), created.json);
+  const orderId = created.json.id as number;
+
+  const again = await b2b("POST", "/orders", DEMO_KEY, first);
+  check("b2b: reenviar lo mismo -> 200 con el mismo pedido", again.status === 200 && again.json.id === orderId, again.json);
+  const changed = await b2b("POST", "/orders", DEMO_KEY, { ...first, items: [{ productId: caliza, quantity: 26 }] });
+  check("b2b: misma referencia con otro contenido -> 409 IDEMPOTENCY_CONFLICT", changed.status === 409 && changed.json.error.code === "IDEMPOTENCY_CONFLICT", changed.json);
+  const sameRefOtherClient = await b2b("POST", "/orders", extOnly.key, first);
+  check("b2b: la misma referencia en otro cliente es otro pedido", sameRefOtherClient.status === 201 && sameRefOtherClient.json.id !== orderId, sameRefOtherClient.json);
+
+  const racy = body();
+  const [r1, r2, r3] = await Promise.all([b2b("POST", "/orders", DEMO_KEY, racy), b2b("POST", "/orders", DEMO_KEY, racy), b2b("POST", "/orders", DEMO_KEY, racy)]);
+  const ids = new Set([r1, r2, r3].map((r) => r.json?.id));
+  check("b2b: tres solicitudes simultáneas con la misma referencia crean un solo pedido", ids.size === 1 && [r1, r2, r3].filter((r) => r.status === 201).length === 1 && [r1, r2, r3].every((r) => r.status === 200 || r.status === 201), [r1.status, r2.status, r3.status]);
+
+  // Validaciones
+  const bad = async (name: string, over: any, status: number, code?: string) => {
+    const r = await b2b("POST", "/orders", DEMO_KEY, body(over));
+    check(`b2b: ${name} -> ${status}`, r.status === status && (!code || r.json.error.code === code), r.json);
+  };
+  await bad("sin productos", { items: [] }, 400);
+  await bad("producto repetido", { items: [{ productId: caliza, quantity: 1 }, { productId: caliza, quantity: 2 }] }, 400);
+  await bad("cantidad cero", { items: [{ productId: caliza, quantity: 0 }] }, 400);
+  await bad("cantidad no numérica", { items: [{ productId: caliza, quantity: "mucho" }] }, 400);
+  await bad("referencia con espacios", { externalRef: "con espacios" }, 400);
+  await bad("referencia vacía", { externalRef: "" }, 400);
+  await bad("fecha mal formada", { dueDate: "mañana" }, 400);
+  await bad("fecha pasada", { dueDate: "2020-01-01" }, 422, "DUE_DATE_IN_PAST");
+  await bad("producto inexistente", { items: [{ productId: 999999, quantity: 1 }] }, 422, "PRODUCT_NOT_FOUND");
+  await bad("giro no permitido al cliente (Maquinaria)", { items: [{ productId: (await sql`select id from products where business_unit_id = ${MAQ} limit 1`)[0].id, quantity: 1 }] }, 422, "PRODUCT_NOT_ALLOWED");
+  await bad("productos de dos giros", { items: [{ productId: caliza, quantity: 1 }, { productId: agregado, quantity: 1 }] }, 422, "MIXED_SUPPLIERS");
+  check("b2b: cliente restringido a Extracción no puede pedir de Proceso -> 422", (await b2b("POST", "/orders", extOnly.key, body({ items: [{ productId: agregado, quantity: 1 }] }))).json.error.code === "PRODUCT_NOT_ALLOWED");
+
+  // Consulta
+  const got = await b2b("GET", `/orders/${orderId}`, DEMO_KEY);
+  check("b2b: consultar un pedido propio", got.status === 200 && got.json.id === orderId, got.json);
+  check("b2b: el pedido de otro cliente no existe -> 404", (await b2b("GET", `/orders/${orderId}`, extOnly.key)).status === 404);
+  check("b2b: id inexistente -> 404", (await b2b("GET", "/orders/999999", DEMO_KEY)).status === 404);
+  check("b2b: id no numérico -> 400", (await b2b("GET", "/orders/abc", DEMO_KEY)).status === 400);
+  const list = await b2b("GET", "/orders?pageSize=2", DEMO_KEY);
+  check("b2b: lista paginada solo con pedidos propios", list.status === 200 && list.json.items.length === 2 && list.json.total >= 3 && list.json.items.every((o: any) => o.externalRef), list.json.total);
+  const others = await b2b("GET", "/orders?pageSize=100", extOnly.key);
+  check("b2b: la lista de otro cliente no incluye los pedidos ajenos", others.json.items.every((o: any) => o.id !== orderId) && others.json.total === 1, others.json.total);
+  check("b2b: filtro por estado", (await b2b("GET", "/orders?status=entregado", DEMO_KEY)).json.items.every((o: any) => o.status === "entregado"));
+  check("b2b: estado inválido -> 400", (await b2b("GET", "/orders?status=zzz", DEMO_KEY)).status === 400);
+  check("b2b: updatedSince en el futuro -> vacío", (await b2b("GET", `/orders?updatedSince=${encodeURIComponent(new Date(Date.now() + 864e5).toISOString())}`, DEMO_KEY)).json.total === 0);
+  check("b2b: updatedSince en el pasado incluye el pedido", (await b2b("GET", `/orders?updatedSince=${encodeURIComponent(new Date(Date.now() - 60e3).toISOString())}`, DEMO_KEY)).json.items.some((o: any) => o.id === orderId));
+  check("b2b: updatedSince sin zona horaria -> 400", (await b2b("GET", "/orders?updatedSince=2026-01-01T00:00:00", DEMO_KEY)).status === 400);
+
+  // El personal ve y gestiona el pedido del tercero
+  const staff = await call("GET", `/orders/${orderId}`, t.gerExt);
+  check("tercero: el gerente del proveedor lo ve con el cliente como solicitante", staff.status === 200 && staff.json.kind === "tercero" && staff.json.requestingUnitName === "Cementos Ejemplo, S. A." && staff.json.history[0].actorName === "Cementos Ejemplo, S. A.", staff.json);
+  check("tercero: el dueño también", (await call("GET", `/orders/${orderId}`, t.dueno)).status === 200);
+  check("tercero: otro giro no lo ve -> 404", (await call("GET", `/orders/${orderId}`, t.gerPro)).status === 404);
+  check("tercero: el gerente puede aprobarlo (allowedTransitions)", staff.json.allowedTransitions.includes("aprobado"));
+  const approve = await call("PATCH", `/orders/${orderId}/status`, t.gerExt, { status: "aprobado" });
+  check("tercero: aprobar -> 200", approve.status === 200 && approve.json.status === "aprobado", approve.json);
+  check("tercero: el cliente ve el nuevo estado y el historial", (await b2b("GET", `/orders/${orderId}`, DEMO_KEY)).json.history.map((h: any) => h.toStatus).join() === "solicitado,aprobado");
+  check("tercero: el operativo no puede aprobar (ya aprobado) pero sí avanzar", (await call("PATCH", `/orders/${orderId}/status`, t.opExt, { status: "en_proceso" })).status === 200);
+  check("tercero: despachar descuenta existencias del proveedor", (await call("PATCH", `/orders/${orderId}/status`, t.opExt, { status: "despachado" })).status === 200);
+  const delivered = await call("PATCH", `/orders/${orderId}/status`, t.opExt, { status: "entregado" });
+  check("tercero: el personal del proveedor confirma la entrega (no hay giro solicitante)", delivered.status === 200 && delivered.json.status === "entregado", delivered.json);
+  check("tercero: el cliente ve el pedido entregado", (await b2b("GET", `/orders/${orderId}`, DEMO_KEY)).json.status === "entregado");
+  check("tercero: un operativo de otro giro no lo gestiona -> 404", (await call("PATCH", `/orders/${orderId}/status`, t.opPro, { status: "cancelado" })).status === 404);
+
+  // Limpieza de lo creado por esta prueba (los pedidos de la demo no se tocan)
+  const ids2 = [readOnly.id, extOnly.id, inactive.id];
+  const mine = sql`select id from orders where api_client_id = any(${ids2}) or external_ref like 'E2E-%'`;
+  await sql`delete from order_status_events where order_id in (${mine})`;
+  await sql`delete from order_items where order_id in (${mine})`;
+  await sql`delete from orders where id in (${mine})`;
+  await sql`delete from api_clients where id = any(${ids2})`;
+  await sql.end();
 }
 
 console.log(`\n${pass} verificaciones correctas, ${failures.length} fallidas`);

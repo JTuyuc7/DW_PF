@@ -1,4 +1,7 @@
 import { count, eq } from "drizzle-orm";
+import { ALERT_TYPES, DEFAULT_RULES } from "../alerts/rules";
+import { SCOPES, hashApiKey, looksLikeApiKey } from "../b2b/keys";
+import { seedDemoData } from "./demo";
 import { client, db, schema } from "./index";
 
 const seedPassword = process.env.SEED_PASSWORD;
@@ -18,6 +21,9 @@ const sitesByUnit: Record<string, string[]> = {
   EXT: ["Cobán", "El Progreso", "Quetzaltenango", "Petén"],
   PRO: ["Zacapa", "Huehuetenango", "Petén"],
   MAQ: ["Guatemala", "Quetzaltenango", "Zacapa", "Petén"],
+  TMP: ["Guatemala"],
+  TPR: ["Guatemala"],
+  CON: ["Guatemala"],
 };
 
 const productsByUnit: Record<string, { name: string; unit: string }[]> = {
@@ -42,6 +48,14 @@ const stock: [string, string, string, number, number][] = [
   ["EXT", "El Progreso", "Material de relleno", 600, 100],
   ["PRO", "Zacapa", "Agregado triturado", 300, 50],
   ["PRO", "Zacapa", "Piso cerámico", 2000, 400],
+  // Existencias bajo el mínimo (generan alertas de stock) y capacidad de los giros de servicio.
+  ["EXT", "Petén", "Material de relleno", 0, 50],
+  ["PRO", "Huehuetenango", "Agregado triturado", 20, 60],
+  ["MAQ", "Guatemala", "Alquiler de excavadora", 400, 80],
+  ["MAQ", "Quetzaltenango", "Alquiler de excavadora", 12, 40],
+  ["TMP", "Guatemala", "Flete de materia prima", 24, 8],
+  ["TPR", "Guatemala", "Flete de producto", 30, 10],
+  ["CON", "Guatemala", "Obra civil", 5000, 500],
 ];
 
 // [correo, nombre, membresías (giro nulo = toda la organización)]
@@ -53,6 +67,8 @@ const demoUsers: [string, string, { unit: string | null; role: (typeof schema.me
   ["operativo@transport.gt", "Operativo Proceso Demo", [{ unit: "PRO", role: "operativo" }]],
   ["vendedor@transport.gt", "Vendedor Demo", [{ unit: "EXT", role: "vendedor" }, { unit: "PRO", role: "vendedor" }]],
   ["vendedor.proceso@transport.gt", "Vendedor Proceso Demo", [{ unit: "PRO", role: "vendedor" }]],
+  ["gerente.maquinaria@transport.gt", "Gerente Maquinaria Demo", [{ unit: "MAQ", role: "gerente" }]],
+  ["gerente.transporte@transport.gt", "Gerente Transporte Demo", [{ unit: "TMP", role: "gerente" }]],
   ["administrativo@transport.gt", "Administrativo Demo", [{ unit: "EXT", role: "administrativo" }]],
   // Sin membresías: los clientes se modelarán con su propia entidad.
   ["cliente@ejemplo.gt", "Cliente Demo", []],
@@ -98,6 +114,23 @@ for (const [code, site, product, quantity, minThreshold] of stock) {
     .onConflictDoNothing();
 }
 
+// Flota con GPS: [giro, tipo, nombre, id del dispositivo]
+const fleet: [string, "camion" | "maquinaria", string, string][] = [
+  ["TMP", "camion", "Camión TMP-01", "GPS-TMP-01"],
+  ["TMP", "camion", "Camión TMP-02", "GPS-TMP-02"],
+  ["TPR", "camion", "Camión TPR-01", "GPS-TPR-01"],
+  ["MAQ", "maquinaria", "Excavadora MAQ-01", "GPS-MAQ-01"],
+  ["EXT", "maquinaria", "Cargador EXT-01", "GPS-EXT-01"],
+];
+await db
+  .insert(schema.assets)
+  .values(fleet.map(([code, kind, name, gpsExternalId]) => ({ businessUnitId: idOf(code), kind, name, gpsExternalId })))
+  .onConflictDoNothing({ target: schema.assets.gpsExternalId });
+await db
+  .insert(schema.alertRules)
+  .values(ALERT_TYPES.map((type) => ({ type, ...DEFAULT_RULES[type] })))
+  .onConflictDoNothing({ target: schema.alertRules.type });
+
 const passwordHash = await Bun.password.hash(seedPassword);
 for (const [email, name, memberships] of demoUsers) {
   await db.insert(schema.users).values({ email, name, passwordHash }).onConflictDoNothing({ target: schema.users.email });
@@ -136,5 +169,47 @@ if (total === 0) {
     .values({ orderId: order.id, fromStatus: null, toStatus: "solicitado", actorUserId: requester.id });
 }
 
-console.log(`Seed listo: ${units.length} giros, ${demoUsers.length} usuarios demo (contraseña: SEED_PASSWORD)`);
+// Cliente de la API B2B de ejemplo, con la clave de B2B_DEMO_API_KEY (solo desarrollo) y un par de pedidos de tercero.
+const demoKey = process.env.B2B_DEMO_API_KEY;
+if (demoKey) {
+  if (!looksLikeApiKey(demoKey)) throw new Error("B2B_DEMO_API_KEY no tiene el formato de una clave (tp_live_ + 43 caracteres)");
+  await db
+    .insert(schema.apiClients)
+    .values({
+      name: "Cementos Ejemplo, S. A.",
+      keyPrefix: demoKey.slice(0, 12),
+      keyHash: hashApiKey(demoKey),
+      scopes: [...SCOPES],
+      unitIds: [idOf("EXT"), idOf("PRO")],
+    })
+    .onConflictDoNothing({ target: schema.apiClients.keyHash });
+  const [apiClient] = await db.select().from(schema.apiClients).where(eq(schema.apiClients.keyHash, hashApiKey(demoKey)));
+  const [{ ordersOfClient }] = await db
+    .select({ ordersOfClient: count() })
+    .from(schema.orders)
+    .where(eq(schema.orders.apiClientId, apiClient.id));
+  if (ordersOfClient === 0) {
+    const [manager] = await db.select().from(schema.users).where(eq(schema.users.email, "gerente.proceso@transport.gt"));
+    const day = (offset: number) => new Date(Date.now() - 6 * 3600 * 1000 + offset * 24 * 3600 * 1000).toISOString().slice(0, 10);
+    const thirdParty: [string, string, string, number, "solicitado" | "aprobado", number][] = [
+      ["OC-2026-0147", "EXT", "Piedra caliza en bruto", 150, "solicitado", 9],
+      ["OC-2026-0152", "PRO", "Piso cerámico", 500, "aprobado", 12],
+    ];
+    for (const [externalRef, unit, product, quantity, status, due] of thirdParty) {
+      const [order] = await db
+        .insert(schema.orders)
+        .values({ kind: "tercero", supplierUnitId: idOf(unit), status, dueDate: day(due), apiClientId: apiClient.id, externalRef })
+        .returning({ id: schema.orders.id });
+      await db.insert(schema.orderItems).values({ orderId: order.id, productId: productId.get(`${idOf(unit)}:${product}`)!, quantity });
+      await db.insert(schema.orderStatusEvents).values({ orderId: order.id, fromStatus: null, toStatus: "solicitado", actorApiClientId: apiClient.id });
+      if (status === "aprobado") {
+        await db.insert(schema.orderStatusEvents).values({ orderId: order.id, fromStatus: "solicitado", toStatus: "aprobado", actorUserId: manager.id });
+      }
+    }
+  }
+}
+
+const demo = await seedDemoData();
+
+console.log(`${demo ? "Datos de ejemplo cargados (pedidos, reuniones y lecturas GPS). " : ""}Seed listo: ${units.length} giros, ${demoUsers.length} usuarios demo (contraseña: SEED_PASSWORD)`);
 await client.end();

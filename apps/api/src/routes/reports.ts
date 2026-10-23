@@ -1,17 +1,24 @@
-import { and, asc, count, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
 import { z } from "zod";
 import { isOwner, loadAccess, requireAuth, rolesIn } from "../auth";
-import { todayGT } from "../dates";
+import { dateString, todayGT } from "../dates";
 import { db, schema } from "../db";
 import { AppError, validate } from "../errors";
 import { ATTENTION_STATUSES, OPEN_STATUSES, ORDER_STATUSES, type OrderStatus } from "../orders/rules";
+import { monthBounds, situation, startOfDayGT, startOfNextDayGT } from "../reports/rules";
 import type { AppEnv, Role } from "../types";
 
-const { orders, orderItems, products, sites, inventoryItems, businessUnits, meetings } = schema;
+const { orders, orderItems, products, sites, inventoryItems, businessUnits, meetings, alerts, alertRules, assets, gpsEvents, orderStatusEvents, apiClients } = schema;
 const requester = alias(businessUnits, "requester");
+
+const overviewQuery = z
+  .object({ from: dateString.optional(), to: dateString.optional() })
+  .refine((q) => (q.from === undefined) === (q.to === undefined), "Indique ambas fechas (from y to) o ninguna")
+  .refine((q) => !q.from || !q.to || q.from <= q.to, "from no puede ser posterior a to")
+  .refine((q) => !q.from || !q.to || Date.parse(q.to) - Date.parse(q.from) <= 366 * 86_400_000, "El período no puede superar un año");
 
 const idParam = z.object({ id: z.coerce.number().int().positive() });
 
@@ -41,6 +48,110 @@ async function sideSummary(column: PgColumn, unitId: number, today: string) {
 export const reportRoutes = new Hono<AppEnv>()
   .use("*", requireAuth, loadAccess)
 
+  // Indicadores consolidados de los seis giros para el dueño (P06). Los pedidos entregados se cuentan en el período
+  // (por la fecha de la confirmación de recepción); el resto de las cifras describen el estado actual.
+  .get("/overview", validate("query", overviewQuery), async (c) => {
+    if (!isOwner(c.get("access"))) throw new AppError(403, "FORBIDDEN", "Solo el dueño consulta el panel consolidado");
+    const q = c.req.valid("query");
+    const period = q.from && q.to ? { from: q.from, to: q.to } : monthBounds(todayGT());
+    const today = todayGT();
+
+    const units = await db.select({ id: businessUnits.id, code: businessUnits.code, name: businessUnits.name, type: businessUnits.type }).from(businessUnits).orderBy(asc(businessUnits.id));
+
+    const overdueExpr = sql<number>`count(*) filter (where ${orders.dueDate} < ${today} and ${inArray(orders.status, [...ATTENTION_STATUSES])})`.mapWith(Number);
+    const openExpr = sql<number>`count(*) filter (where ${inArray(orders.status, [...OPEN_STATUSES])})`.mapWith(Number);
+    const supplierRows = await db.select({ unitId: orders.supplierUnitId, open: openExpr, overdue: overdueExpr }).from(orders).groupBy(orders.supplierUnitId);
+    const requesterRows = await db
+      .select({ unitId: orders.requestingUnitId, open: openExpr })
+      .from(orders)
+      .where(sql`${orders.requestingUnitId} is not null`)
+      .groupBy(orders.requestingUnitId);
+    const [orderTotals] = await db.select({ open: openExpr, overdue: overdueExpr }).from(orders);
+
+    const deliveredRows = await db
+      .select({ unitId: orders.supplierUnitId, total: count() })
+      .from(orderStatusEvents)
+      .innerJoin(orders, eq(orders.id, orderStatusEvents.orderId))
+      .where(
+        and(
+          eq(orderStatusEvents.toStatus, "entregado"),
+          gte(orderStatusEvents.createdAt, startOfDayGT(period.from)),
+          lt(orderStatusEvents.createdAt, startOfNextDayGT(period.to)),
+        ),
+      )
+      .groupBy(orders.supplierUnitId);
+
+    const alertRows = await db
+      .select({ unitId: alerts.businessUnitId, severity: alerts.severity, total: count() })
+      .from(alerts)
+      .where(eq(alerts.status, "abierta"))
+      .groupBy(alerts.businessUnitId, alerts.severity);
+
+    // Flota: "en ruta" = la última lectura es reciente y marca movimiento.
+    const latest = await db
+      .selectDistinctOn([gpsEvents.assetId], { assetId: gpsEvents.assetId, recordedAt: gpsEvents.recordedAt, speedKmh: gpsEvents.speedKmh })
+      .from(gpsEvents)
+      .orderBy(gpsEvents.assetId, desc(gpsEvents.recordedAt));
+    const fleet = await db.select({ id: assets.id, unitId: assets.businessUnitId }).from(assets);
+    const now = Date.now();
+    const moving = new Set(latest.filter((e) => now - e.recordedAt.getTime() <= 15 * 60_000 && e.speedKmh > 0).map((e) => e.assetId));
+
+    const rows = units.map((u) => {
+      const sup = supplierRows.find((r) => r.unitId === u.id);
+      const req = requesterRows.find((r) => r.unitId === u.id);
+      const mine = alertRows.filter((r) => r.unitId === u.id);
+      const alertCount = (sev: string) => mine.find((r) => r.severity === sev)?.total ?? 0;
+      const openAlerts = mine.reduce((t, r) => t + r.total, 0);
+      const criticalAlerts = alertCount("critica");
+      const overdue = sup?.overdue ?? 0;
+      const unitAssets = fleet.filter((a) => a.unitId === u.id);
+      return {
+        ...u,
+        openAsSupplier: sup?.open ?? 0,
+        openAsRequester: req?.open ?? 0,
+        overdue,
+        deliveredInPeriod: deliveredRows.find((r) => r.unitId === u.id)?.total ?? 0,
+        openAlerts,
+        criticalAlerts,
+        assets: unitAssets.length,
+        assetsMoving: unitAssets.filter((a) => moving.has(a.id)).length,
+        situation: situation({ overdue, criticalAlerts, openAlerts }),
+      };
+    });
+
+    // Alertas críticas abiertas, las más recientes primero.
+    const critical = await db
+      .select({
+        id: alerts.id,
+        type: alertRules.type,
+        businessUnitId: alerts.businessUnitId,
+        businessUnitName: businessUnits.name,
+        payload: alerts.payload,
+        createdAt: alerts.createdAt,
+      })
+      .from(alerts)
+      .innerJoin(alertRules, eq(alertRules.id, alerts.ruleId))
+      .innerJoin(businessUnits, eq(businessUnits.id, alerts.businessUnitId))
+      .where(and(eq(alerts.status, "abierta"), eq(alerts.severity, "critica")))
+      .orderBy(desc(alerts.createdAt), desc(alerts.id))
+      .limit(5);
+
+    return c.json({
+      period,
+      totals: {
+        openOrders: orderTotals.open,
+        overdueOrders: orderTotals.overdue,
+        openAlerts: rows.reduce((t, r) => t + r.openAlerts, 0),
+        criticalAlerts: rows.reduce((t, r) => t + r.criticalAlerts, 0),
+        deliveredInPeriod: rows.reduce((t, r) => t + r.deliveredInPeriod, 0),
+        assetsMoving: rows.reduce((t, r) => t + r.assetsMoving, 0),
+        assets: fleet.length,
+      },
+      units: rows,
+      criticalAlerts: critical,
+    });
+  })
+
   // Indicadores de un giro para su panel (P02).
   .get("/business-units/:id", validate("param", idParam), async (c) => {
     const access = c.get("access");
@@ -68,11 +179,12 @@ export const reportRoutes = new Hono<AppEnv>()
       .select({
         id: orders.id,
         status: orders.status,
-        requestingUnitName: requester.name,
+        requestingUnitName: sql<string | null>`coalesce(${requester.name}, ${apiClients.name})`,
         dueDate: orders.dueDate,
       })
       .from(orders)
       .leftJoin(requester, eq(requester.id, orders.requestingUnitId))
+      .leftJoin(apiClients, eq(apiClients.id, orders.apiClientId))
       .where(and(eq(orders.supplierUnitId, id), inArray(orders.status, [...ATTENTION_STATUSES])))
       .orderBy(asc(orders.dueDate), asc(orders.id))
       .limit(5);
