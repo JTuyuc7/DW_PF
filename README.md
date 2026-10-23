@@ -35,12 +35,12 @@ El proyecto dispone de menos de un mes, por lo que toda la solución se **diseñ
 | Autenticación con JWT y permisos por membresía (rol y giro) | Sí | Lista (API e interfaz de inicio de sesión) |
 | Pedido interno entre giros | Sí | Listo de extremo a extremo: crear, listar, aprobar y avanzar estados, mensajes y descuento de inventario |
 | Inventario (consulta y ajuste) y catálogo público (giros y productos) | Sí | API lista |
-| Panel por giro | Sí | Listo en `/panel`: indicadores, pedidos por atender y bloque "Requiere atención" (retrasos y stock bajo, sin alertas automáticas) |
+| Panel por giro | Sí | Listo en `/panel`: indicadores, pedidos por atender y bloque "Requiere atención" (retrasos y stock bajo, calculado al abrir la página) |
 | Sala de ventas pública | Sí | Landing en `/` con carrusel de giros y catálogo, `/nosotros`, `/contacto` y `/legal` |
 | Solicitud de reunión | Sí | Formulario público en `/contacto#reunion`, asignación automática de vendedor y gestión por el personal en `/reuniones` |
-| Panel por giro y consolidado | Sí | Pendiente |
-| Alertas (pedido retrasado, exceso de velocidad) | Sí | Pendiente |
-| API para terceros (`/api/v1/b2b`) | Sí | Pendiente |
+| Panel consolidado del dueño | Sí | Listo en `/resumen`: indicadores de los seis giros, situación por giro, pedidos abiertos, alertas críticas y período mensual |
+| Alertas (pedido retrasado, stock bajo, exceso de velocidad) | Sí | Listo: motor de reglas que corre cada minuto en la API, ingesta GPS con servicio simulado y pantalla `/alertas` |
+| API para terceros (`/api/v1/b2b`) | Sí | Lista: clave por cliente con alcances y giros permitidos, catálogo, creación idempotente de pedidos y consulta del estado; el personal gestiona esos pedidos en la aplicación. Webhooks y EDI/CSV solo diseñados |
 | PWA | Sí | Pendiente |
 | Presupuesto y gastos, EDI/CSV, webhooks, integración real con GPS | Sí | No |
 
@@ -93,6 +93,9 @@ Requisito: Docker Desktop.
    | `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | Credenciales de PostgreSQL. |
    | `JWT_SECRET` | Clave de firma de los JWT. Generar con `openssl rand -base64 48`. |
    | `SEED_PASSWORD` | Contraseña de los usuarios demo. Solo desarrollo. |
+   | `B2B_DEMO_API_KEY` | Clave del cliente de ejemplo de la API B2B (opcional, solo desarrollo). Forma: `tp_live_` + 43 caracteres. |
+   | `GPS_SERVICE_TOKEN` | Token con el que el servicio GPS (el simulador) se autentica en `POST /api/v1/gps/ingest`. Generar con `openssl rand -base64 32`. |
+   | `ALERT_INTERVAL_SECONDS` | Segundos entre barridos del motor de alertas (opcional, por defecto 60; 0 lo deja solo bajo demanda). |
    | `WEB_ORIGIN` | Origen del frontend permitido por CORS (opcional, por defecto `http://localhost:3000`). |
    | `NEXT_PUBLIC_API_URL` | URL de la API vista desde el navegador (opcional, por defecto `http://localhost:4000`). |
 
@@ -113,7 +116,7 @@ Requisito: Docker Desktop.
 | PostgreSQL | localhost:5432 (credenciales definidas en `.env`) |
 | Almacenamiento S3 | http://localhost:8333 |
 
-Al iniciar, la API aplica el esquema y siembra datos de ejemplo: los seis giros con sus sedes, un catálogo provisional de productos, existencias de inventario, un pedido interno y los usuarios demo. La contraseña de todos es el valor de `SEED_PASSWORD`.
+Al iniciar, la API aplica el esquema y siembra datos de ejemplo: los seis giros con sus sedes, un catálogo provisional de productos, existencias de inventario, un pedido interno y los usuarios demo. En la primera carga añade además datos de ejemplo con vida propia (todo inventado): 14 pedidos en todos los estados, tres de ellos vencidos, con historial y mensajes; 6 solicitudes de reunión repartidas entre vendedores; existencias por debajo del mínimo; y lecturas GPS en las que dos camiones terminan por encima del límite. Así cada usuario ve información al entrar (panel, pedidos, reuniones y alertas). Las alertas de velocidad se cierran solas a los 15 minutos si no llegan lecturas nuevas (`bun run gps:sim`); las de retraso y stock bajo permanecen. La contraseña de todos es el valor de `SEED_PASSWORD`.
 
 | Usuario | Rol y giro |
 |---|---|
@@ -124,6 +127,8 @@ Al iniciar, la API aplica el esquema y siembra datos de ejemplo: los seis giros 
 | `operativo@transport.gt` | Operativo de Proceso |
 | `vendedor@transport.gt` | Vendedor de Extracción y Proceso |
 | `vendedor.proceso@transport.gt` | Vendedor de Proceso (con el anterior, se reparten las reuniones de Proceso) |
+| `gerente.maquinaria@transport.gt` | Gerente de Maquinaria |
+| `gerente.transporte@transport.gt` | Gerente de Transporte de materia prima |
 | `administrativo@transport.gt` | Administrativo de Extracción |
 | `cliente@ejemplo.gt` | Sin membresías (los clientes se modelarán con su propia entidad) |
 
@@ -155,11 +160,38 @@ pnpm dev                           # web en http://localhost:3000
 
 ```bash
 cd apps/api
-bun test src          # pruebas unitarias de la máquina de estados del pedido
+bun test src          # pruebas unitarias: máquina de estados del pedido, reuniones y reglas de alertas
 bun run test:e2e      # pruebas de extremo a extremo contra la API en Docker (usa ../../.env)
 ```
 
-La prueba de extremo a extremo crea pedidos y mueve inventario, por lo que solo debe usarse con la base de desarrollo.
+La prueba de extremo a extremo cancela las reuniones abiertas al empezar (incluidas las de ejemplo), así que tras correrla conviene recrear la base para recuperar los datos de ejemplo (`docker compose down -v`). Además crea pedidos, mueve inventario, inserta lecturas GPS y vence la fecha de un pedido directamente en la base, por lo que solo debe usarse con la base de desarrollo.
+
+### Alertas y GPS simulado
+
+El motor de alertas corre dentro de la API (cada `ALERT_INTERVAL_SECONDS`) y también al recibir lecturas GPS. Para verlo trabajar, con la API en marcha:
+
+```bash
+cd apps/api
+bun run gps:sim -- --once GPS-TMP-01=110   # una ronda de lecturas, con el camión TMP-01 a 110 km/h
+bun run gps:sim                            # lecturas continuas cada 10 s, con excesos al azar
+```
+
+Entre como `gerente.transporte@transport.gt` (o `dueno@transport.gt`) y abra `/alertas`. El simulador usa los cinco dispositivos del seed (`GPS-TMP-01`, `GPS-TMP-02`, `GPS-TPR-01`, `GPS-MAQ-01`, `GPS-EXT-01`) y datos inventados.
+
+### API B2B
+
+Un sistema de terceros crea y consulta pedidos con una clave de API (detalle y códigos de error en [`docs/05`](docs/05-datos-y-apis.md), sección 5.5b). Con `B2B_DEMO_API_KEY` definida, el seed crea el cliente "Cementos Ejemplo, S. A." con dos pedidos:
+
+```bash
+curl -X POST http://localhost:4000/api/v1/b2b/orders   -H "Authorization: Bearer $B2B_DEMO_API_KEY" -H "Content-Type: application/json"   -d '{"externalRef":"OC-2026-0200","dueDate":"2026-12-15","items":[{"productId":1,"quantity":50}]}'
+```
+
+Repetir la misma solicitud devuelve el pedido existente (`200`). El personal ve el pedido en `/pedidos` con el cliente como solicitante y lo gestiona como cualquier otro. Para dar de alta otro cliente (la clave se muestra una sola vez):
+
+```bash
+cd apps/api
+bun run b2b:client -- "Otro Cliente, S. A." --units EXT,PRO --scopes catalog:read,orders:read,orders:write
+```
 
 ## Estructura del repositorio
 
@@ -174,7 +206,7 @@ docker-compose.yml  Servicios locales: db, storage, api, web
 
 ## Estado
 
-La documentación de diseño y los wireframes están completos. El flujo del pedido interno entre giros funciona de extremo a extremo: API probada (permisos por membresía, máquina de estados, historial, mensajes e inventario) e interfaz con inicio de sesión, lista, nuevo pedido y detalle con aprobación (pantallas P01, P03, P04 y P05). Siguen el resto de las capacidades del MVP (alertas automáticas, panel consolidado del dueño, API para terceros, PWA) y la estimación de costos de la propuesta de nube.
+La documentación de diseño y los wireframes están completos. El flujo del pedido interno entre giros funciona de extremo a extremo: API probada (permisos por membresía, máquina de estados, historial, mensajes e inventario) e interfaz con inicio de sesión, lista, nuevo pedido y detalle con aprobación (pantallas P01, P03, P04 y P05). El motor de alertas ya genera avisos por rol y giro (pedido retrasado, stock bajo y exceso de velocidad con el GPS simulado) y la flota se consulta en `/flota`. Sigue la PWA y la estimación de costos de la propuesta de nube.
 
 Para recorrer el flujo: entre como `operativo@transport.gt` (Proceso), cree un pedido a Extracción, salga y entre como `gerente@transport.gt` para aprobarlo.
 

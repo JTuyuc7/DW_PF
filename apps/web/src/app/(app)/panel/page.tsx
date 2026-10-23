@@ -31,13 +31,19 @@ export default function PanelPage() {
     if (!owner && own.length === 0) router.replace("/pedidos");
   }, [owner, own, router]);
 
+  // El dueño entra por el resumen consolidado; desde allí abre el panel de un giro con ?giro=ID.
+  useEffect(() => {
+    if (owner && !new URLSearchParams(window.location.search).get("giro")) router.replace("/resumen");
+  }, [owner, router]);
+
   // El dueño puede abrir el panel de cualquier giro.
   useEffect(() => {
     if (!owner) return;
+    const wanted = Number(new URLSearchParams(window.location.search).get("giro"));
     api<{ items: BusinessUnit[] }>("/public/business-units", { auth: false })
       .then((d) => {
         setUnits(d.items.map((u) => ({ id: u.id, name: u.name })));
-        setUnitId((current) => current ?? d.items[0]?.id ?? null);
+        setUnitId((current) => current ?? (d.items.find((u) => u.id === wanted) ?? d.items[0])?.id ?? null);
       })
       .catch(setError);
   }, [owner]);
@@ -64,6 +70,11 @@ export default function PanelPage() {
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
+          {owner && (
+            <Link href="/resumen" className="text-sm text-brand underline">
+              ← Resumen de la organización
+            </Link>
+          )}
           <h1 className="text-xl font-semibold">Panel{report ? ` · ${report.businessUnit.name}` : ""}</h1>
           <p className="text-sm text-muted">Resumen de los pedidos y las existencias del giro.</p>
         </div>

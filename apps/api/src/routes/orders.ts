@@ -1,4 +1,4 @@
-import { type SQL, and, asc, count, desc, eq, gte, inArray, lt, or } from "drizzle-orm";
+import { type SQL, and, asc, count, desc, eq, gte, inArray, lt, or, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -9,7 +9,7 @@ import { AppError, validate } from "../errors";
 import { CAN_CREATE, ORDER_STATUSES, type OrderRoles, allowedTransitions, checkTransition } from "../orders/rules";
 import type { Access, AppEnv } from "../types";
 
-const { orders, orderItems, orderMessages, orderStatusEvents, products, users, businessUnits } = schema;
+const { orders, orderItems, orderMessages, orderStatusEvents, products, users, businessUnits, apiClients } = schema;
 
 const supplier = alias(businessUnits, "supplier");
 const requester = alias(businessUnits, "requester");
@@ -63,7 +63,9 @@ const headerColumns = {
   supplierUnitId: orders.supplierUnitId,
   supplierUnitName: supplier.name,
   requestingUnitId: orders.requestingUnitId,
-  requestingUnitName: requester.name,
+  // En un pedido de tercero, quien solicita es el cliente de la API.
+  requestingUnitName: sql<string | null>`coalesce(${requester.name}, ${apiClients.name})`,
+  externalRef: orders.externalRef,
   dueDate: orders.dueDate,
   createdAt: orders.createdAt,
 };
@@ -73,7 +75,8 @@ const headerQuery = (ex: Executor) =>
     .select(headerColumns)
     .from(orders)
     .innerJoin(supplier, eq(supplier.id, orders.supplierUnitId))
-    .leftJoin(requester, eq(requester.id, orders.requestingUnitId));
+    .leftJoin(requester, eq(requester.id, orders.requestingUnitId))
+    .leftJoin(apiClients, eq(apiClients.id, orders.apiClientId));
 
 type Header = Awaited<ReturnType<typeof headerQuery>>[number];
 
@@ -82,11 +85,11 @@ function canSee(a: Access, h: Pick<Header, "supplierUnitId" | "requestingUnitId"
   return isOwner(a) || memberUnitIds(a).some((u) => u === h.supplierUnitId || u === h.requestingUnitId);
 }
 
-function orderRoles(a: Access, h: Pick<Header, "supplierUnitId" | "requestingUnitId">): OrderRoles {
-  return {
-    supplier: rolesIn(a, h.supplierUnitId),
-    requester: h.requestingUnitId === null ? [] : rolesIn(a, h.requestingUnitId),
-  };
+// Un pedido de tercero no tiene giro solicitante: el personal del proveedor actúa también por el lado del solicitante
+// (por ejemplo, confirmar la entrega), porque el tercero no usa la aplicación.
+function orderRoles(a: Access, h: Pick<Header, "supplierUnitId" | "requestingUnitId" | "kind">): OrderRoles {
+  const supplier = rolesIn(a, h.supplierUnitId);
+  return { supplier, requester: h.kind === "tercero" ? supplier : h.requestingUnitId === null ? [] : rolesIn(a, h.requestingUnitId) };
 }
 
 // Si el pedido no existe o el usuario no lo puede ver, la respuesta es la misma (404).
@@ -120,11 +123,12 @@ async function orderDetail(ex: Executor, a: Access, h: Header) {
     .select({
       fromStatus: orderStatusEvents.fromStatus,
       toStatus: orderStatusEvents.toStatus,
-      actorName: users.name,
+      actorName: sql<string>`coalesce(${users.name}, ${apiClients.name})`,
       createdAt: orderStatusEvents.createdAt,
     })
     .from(orderStatusEvents)
-    .innerJoin(users, eq(users.id, orderStatusEvents.actorUserId))
+    .leftJoin(users, eq(users.id, orderStatusEvents.actorUserId))
+    .leftJoin(apiClients, eq(apiClients.id, orderStatusEvents.actorApiClientId))
     .where(eq(orderStatusEvents.orderId, h.id))
     .orderBy(asc(orderStatusEvents.id));
   return { ...h, items, history, allowedTransitions: allowedTransitions(h.status, orderRoles(a, h)) };
