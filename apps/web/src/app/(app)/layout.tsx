@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ConnectionBanner } from "@/components/ConnectionBanner";
+import { InstallButton } from "@/components/InstallButton";
 import { SessionProvider, useSession } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
 import { describeMembership, handlesMeetings, hasPanel, isOwnerOf, receivesAlerts } from "@/lib/format";
@@ -60,6 +62,11 @@ function Shell({ children }: { children: React.ReactNode }) {
               </Link>
             )}
             {alertsEnabled && (
+              <Link href="/inventario" className="hover:text-brand">
+                Inventario
+              </Link>
+            )}
+            {alertsEnabled && (
               <Link href="/alertas" className="hover:text-brand">
                 Alertas
                 {open && open.total > 0 && (
@@ -85,12 +92,14 @@ function Shell({ children }: { children: React.ReactNode }) {
                 {user.memberships.length === 0 ? "Sin roles asignados" : user.memberships.map(describeMembership).join(" · ")}
               </p>
             </div>
+            <InstallButton />
             <button onClick={logout} className="rounded-md border border-line px-3 py-1.5 hover:bg-brand-soft">
               Salir
             </button>
           </div>
         </div>
       </header>
+      <ConnectionBanner />
       <main className="mx-auto max-w-6xl px-4 py-6">{children}</main>
     </>
   );

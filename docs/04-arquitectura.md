@@ -174,6 +174,19 @@ Cada decisión sigue el formato: contexto, decisión, alternativas consideradas 
 - **Alternativas.** React Native, Flutter o .NET MAUI: mayor capacidad nativa, pero duplican la base de código y requieren publicación en tiendas.
 - **Consecuencias.** Una sola base de código y despliegue inmediato. Limitaciones conocidas: algunas capacidades nativas, y las notificaciones push en iOS exigen que la PWA esté instalada.
 
+**Implementación (MVP).**
+
+| Pieza | Qué hace |
+|---|---|
+| Manifiesto (`/manifest.webmanifest`) | Nombre, colores, `display: standalone`, `start_url: /panel`, atajos a Pedidos, Alertas y Flota. |
+| Íconos (`/icons/192`, `/512`, `/maskable`, `/apple`) | Se generan al vuelo con una marca tipográfica ("TP"); no hay imágenes con licencia. Sustituibles por los de la empresa. |
+| Service Worker (`/sw.js`) | Solo guarda la cáscara: documentos y recursos estáticos del mismo origen, con la estrategia *red primero, copia de respaldo*. Sin conexión abre lo ya visitado y, para lo demás, muestra `/offline`. No intercepta las solicitudes RSC de Next, que comparten URL con el documento pero devuelven otro formato. |
+| Datos sin conexión (`src/lib/api.ts`) | Cada consulta correcta se guarda en la Cache API, **separada por usuario** (el identificador sale del token). Si la red falla se responde con la última copia y un aviso indica de cuándo es. Cerrar sesión, o un `401`, borra esos datos. |
+| Cambios sin conexión | No se permiten ni se encolan: crear o cambiar de estado un pedido exige red. Encolarlos exigiría resolver conflictos (por ejemplo, un pedido cancelado mientras tanto) y queda como mejora. |
+| Instalación | Botón "Instalar aplicación" cuando el navegador lo ofrece (Chromium); en iOS se instala desde *Compartir → Añadir a pantalla de inicio*. |
+
+Nota técnica: Next 15 transmite los metadatos dentro de `<body>`, y los navegadores solo reconocen `<link rel="manifest">` en `<head>`; sin corrección la aplicación no se podía instalar. Se resolvió con `htmlLimitedBots: /.*/` en `next.config.ts`, que devuelve los metadatos en el encabezado para todos los clientes.
+
 ### ADR-008: Contenedores con Docker Compose; GCP y Cloudflare como propuesta de producción
 
 - **Contexto.** El despliegue debe ser reproducible y debe proponerse una infraestructura en la nube con justificación.

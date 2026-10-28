@@ -180,3 +180,17 @@ export type Asset = {
 
 export type AssetList = { items: Asset[]; maxSpeedKmh: number; staleMinutes: number };
 export type AssetEvents = { asset: { id: number; name: string; businessUnitId: number }; items: (Reading & { id: number })[]; maxSpeedKmh: number };
+
+export type InventoryRow = {
+  siteId: number;
+  siteName: string;
+  businessUnitId: number;
+  businessUnitName: string;
+  productId: number;
+  productName: string;
+  unit: string;
+  quantity: number;
+  minThreshold: number;
+  belowMinimum: boolean;
+};
+export type InventoryList = { items: InventoryRow[] };
