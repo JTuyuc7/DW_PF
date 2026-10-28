@@ -4,8 +4,8 @@
 |---|---|
 | **Proyecto** | TransPort |
 | **Documento** | Entorno local, comparación de alternativas y propuesta de infraestructura en la nube |
-| **Estado** | Versión 0.2. Estimación de costos pendiente |
-| **Documentos relacionados** | [03-alcance](03-alcance.md), [04-arquitectura](04-arquitectura.md) |
+| **Estado** | Versión 0.3. Estimación de costos en [09-costos-nube](09-costos-nube.md) |
+| **Documentos relacionados** | [03-alcance](03-alcance.md), [04-arquitectura](04-arquitectura.md), [09-costos-nube](09-costos-nube.md) |
 
 ## 1. Alcance de este documento
 
@@ -109,12 +109,12 @@ flowchart LR
 
 ## 5. Estimación de costos
 
-Pendiente. Se realizará con las calculadoras oficiales de cada proveedor, a partir de un supuesto de carga explícito:
+El detalle (supuestos de carga, precios unitarios con su fuente y estado de verificación, sensibilidad y diagramas) está en [09-costos-nube](09-costos-nube.md). Resumen, en dólares estadounidenses por mes:
 
-| Supuesto | Valor |
-|---|---|
-| Usuarios activos por rol | Por definir |
-| Pedidos por día | Por definir |
-| Eventos GPS por minuto | Por definir (depende del tamaño de la flota) |
+| Escenario | Usuarios | Flota con GPS | Costo mensual estimado |
+|---|---:|---:|---:|
+| A. Piloto | 25 | 10 | 51.23 |
+| B. Operación inicial | 80 | 40 | 53.23 |
+| C. Operación completa (con alta disponibilidad) | 250 | 120 | 249.44 |
 
-No se incluyen cifras de costo hasta contar con esos supuestos y con las estimaciones oficiales.
+Cloud SQL representa entre el 86 % y casi el 100 % del costo; los servicios que cobran por uso caben en gran parte en las franjas gratuitas. Es una estimación de orden de magnitud con supuestos hipotéticos; el precio de Cloud SQL debe validarse en la calculadora oficial.

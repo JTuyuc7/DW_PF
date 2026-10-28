@@ -24,7 +24,7 @@ TransPort es una empresa ficticia, basada en modelos reales de Guatemala, que ho
 - Alertas por rol a partir de eventos de pedidos, inventario y GPS.
 - Integración con terceros mediante una API REST versionada.
 
-El enunciado original está en [`docs/documento.md`](docs/documento.md).
+Para una visión general pensada para presentar (problema, solución, diagramas, guion de demostración y limitaciones), véase [`docs/00-presentacion.md`](docs/00-presentacion.md). El enunciado original está en [`docs/documento.md`](docs/documento.md).
 
 ## Alcance: diseñado e implementado
 
@@ -41,7 +41,7 @@ El proyecto dispone de menos de un mes, por lo que toda la solución se **diseñ
 | Panel consolidado del dueño | Sí | Listo en `/resumen`: indicadores de los seis giros, situación por giro, pedidos abiertos, alertas críticas y período mensual |
 | Alertas (pedido retrasado, stock bajo, exceso de velocidad) | Sí | Listo: motor de reglas que corre cada minuto en la API, ingesta GPS con servicio simulado y pantalla `/alertas` |
 | API para terceros (`/api/v1/b2b`) | Sí | Lista: clave por cliente con alcances y giros permitidos, catálogo, creación idempotente de pedidos y consulta del estado; el personal gestiona esos pedidos en la aplicación. Webhooks y EDI/CSV solo diseñados |
-| PWA | Sí | Pendiente |
+| PWA | Sí | Lista: manifiesto, íconos, Service Worker, botón de instalación y consulta sin conexión de lo ya visitado (los cambios exigen conexión). Sin notificaciones push |
 | Presupuesto y gastos, EDI/CSV, webhooks, integración real con GPS | Sí | No |
 
 Detalle y justificación en [`docs/03-alcance.md`](docs/03-alcance.md).
@@ -52,14 +52,16 @@ La carpeta [`docs/`](docs/) contiene el diseño completo. Se recomienda leerla e
 
 | Documento | Contenido |
 |---|---|
+| [00 - Presentación](docs/00-presentacion.md) | Resumen para presentar: problema, solución, arquitectura, flujos con diagramas, guion de demostración y límites. |
 | [01 - Requisitos](docs/01-requisitos.md) | Requisitos funcionales (RF) y no funcionales (RNF), y criterios de entrega. |
 | [02 - Dominio](docs/02-dominio.md) | Giros, actores, dependencias entre giros y problema a resolver. |
 | [03 - Alcance](docs/03-alcance.md) | Qué se implementa, qué solo se diseña, exclusiones y riesgos. |
 | [04 - Arquitectura](docs/04-arquitectura.md) | Vistas de contexto y componentes, ocho decisiones de arquitectura (ADR), seguridad. |
 | [05 - Datos y APIs](docs/05-datos-y-apis.md) | Modelo entidad-relación, reglas de negocio, catálogo de endpoints, estados del pedido y contrato GPS simulado. |
-| [06 - Infraestructura](docs/06-infraestructura.md) | Entorno local, alternativas evaluadas y propuesta de nube (GCP + Cloudflare). |
+| [06 - Infraestructura](docs/06-infraestructura.md) | Entorno local, alternativas evaluadas y propuesta de nube (GCP + Cloudflare), con resumen de costos. |
 | [07 - Interfaz y wireframes](docs/07-ui-wireframes.md) | Mapa de navegación, flujo del pedido y especificación de las nueve pantallas. |
 | [08 - Plan y roles](docs/08-plan-y-roles.md) | Roles del proyecto y del sistema, plan de trabajo y riesgos. |
+| [09 - Costos de nube](docs/09-costos-nube.md) | Estimación mensual de la propuesta en tres escenarios, con supuestos, precios con su fuente, diagramas y sensibilidad. |
 
 **Wireframes.** Las nueve pantallas (P01 a P09) están en [`docs/wireframes/wireframes.html`](docs/wireframes/wireframes.html). GitHub muestra ese archivo como código; descárgalo o clona el repositorio y ábrelo en el navegador.
 
@@ -178,6 +180,12 @@ bun run gps:sim                            # lecturas continuas cada 10 s, con e
 
 Entre como `gerente.transporte@transport.gt` (o `dueno@transport.gt`) y abra `/alertas`. El simulador usa los cinco dispositivos del seed (`GPS-TMP-01`, `GPS-TMP-02`, `GPS-TPR-01`, `GPS-MAQ-01`, `GPS-EXT-01`) y datos inventados.
 
+### Instalar como PWA
+
+En Chrome o Edge, tras iniciar sesión aparece el botón "Instalar aplicación" en la barra (o el ícono de instalar en la barra de direcciones). En el celular, abra la dirección de la web y use *Instalar aplicación* o *Añadir a pantalla de inicio* (iOS: *Compartir*). Los navegadores exigen HTTPS para instalar, salvo en `localhost`; para probar desde el celular en la red local haría falta un túnel HTTPS.
+
+Sin conexión se pueden consultar las pantallas que ya se abrieron, con una franja que indica la fecha de los datos guardados; crear o cambiar pedidos exige conexión. Cerrar sesión borra los datos guardados. Para volver a probarlo en el navegador: DevTools, pestaña *Application* (o *Network*, opción *Offline*).
+
 ### API B2B
 
 Un sistema de terceros crea y consulta pedidos con una clave de API (detalle y códigos de error en [`docs/05`](docs/05-datos-y-apis.md), sección 5.5b). Con `B2B_DEMO_API_KEY` definida, el seed crea el cliente "Cementos Ejemplo, S. A." con dos pedidos:
@@ -206,7 +214,7 @@ docker-compose.yml  Servicios locales: db, storage, api, web
 
 ## Estado
 
-La documentación de diseño y los wireframes están completos. El flujo del pedido interno entre giros funciona de extremo a extremo: API probada (permisos por membresía, máquina de estados, historial, mensajes e inventario) e interfaz con inicio de sesión, lista, nuevo pedido y detalle con aprobación (pantallas P01, P03, P04 y P05). El motor de alertas ya genera avisos por rol y giro (pedido retrasado, stock bajo y exceso de velocidad con el GPS simulado) y la flota se consulta en `/flota`. Sigue la PWA y la estimación de costos de la propuesta de nube.
+La documentación de diseño y los wireframes están completos. El flujo del pedido interno entre giros funciona de extremo a extremo: API probada (permisos por membresía, máquina de estados, historial, mensajes e inventario) e interfaz con inicio de sesión, lista, nuevo pedido y detalle con aprobación (pantallas P01, P03, P04 y P05). El motor de alertas ya genera avisos por rol y giro (pedido retrasado, stock bajo y exceso de velocidad con el GPS simulado) y la flota se consulta en `/flota`. La aplicación se puede instalar como PWA y consultar sin conexión lo ya visitado. La estimación de costos de la propuesta de nube está en `docs/09-costos-nube.md`.
 
 Para recorrer el flujo: entre como `operativo@transport.gt` (Proceso), cree un pedido a Extracción, salga y entre como `gerente@transport.gt` para aprobarlo.
 
